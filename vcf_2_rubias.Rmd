@@ -1,0 +1,176 @@
+---
+title: "rubias_prep-transpose_python_out"
+author: "Matthew Bootsma"
+date: "May 23, 2019"
+output: html_document
+---
+#Dependencies
+```{r}
+library(reticulate)
+library(dplyr)
+```
+
+#-----Data Prep-----
+#Parse
+  Parse alleles from raw .vcf output produced in stacks_2
+```{python}
+# script parse vcf file get alleles per individual
+import os
+import re
+os.getcwd()
+os.chdir("I:/WAE_RAD_Data/GSI_parentage_dev/dummy_data/")
+# open vcf file read all lines into an array, close file
+raw_vcf_file = open("populations.haps.vcf", "r")
+raw_vcf_array = raw_vcf_file.readlines()
+raw_vcf_file.close()
+
+# open file you are going to write new results to
+out_file = open("haplotype_alleles-4rubias.vcf", "w")
+r = 1
+# for each line in vcf file
+a = str(0)
+b = str(1)
+for i in raw_vcf_array:
+    # this is trying to recognize the header line
+    if i.startswith("#CHROM"):
+
+        # hard code column names you want
+            out_file.write("SNP_ID" + "\t")
+            header_line = i.rstrip().split("\t")
+            # write individual names
+            z = 0
+            for j in header_line:
+                z = z + 1                
+                if z > 9 and z < len(header_line)+1:
+                    out_file.write(j + "\t")                 
+                #else: out_file.write(j)
+
+            out_file.write("\n")
+            # at this point we should have header line
+
+    # use the if not # to go to the data
+    elif "#" not in i:
+        #write SNP name (allele 1)
+        split_SNP_line = i.rstrip().split("\t")
+        SNP_name = split_SNP_line[0]+"_"+split_SNP_line[1]
+        #print SNP_name
+        out_file.write(SNP_name + "\t")
+        allele0 = split_SNP_line[3]
+        allele1 = split_SNP_line[4]
+         
+
+        # iterates through individual SNP calls
+        z = 0
+        for j in split_SNP_line:
+            #print j
+
+            z = z + 1
+            if z > 9 and z < len(header_line)+1:
+                # split the genotype cell
+                gen_data = j.split(":")
+                #print gen_data[0]
+                genotype = gen_data[0]
+                #print genotype
+                #the genotype call #/# has a " character attached, this next line removes the "
+                genotype = re.sub('\"','',genotype)
+                allele_data = genotype.split("/")
+                X = allele_data[0]
+                
+                #print genotype
+                #write out the first genotype call (allele character)
+
+                if  X == a:
+                  out_file.write(allele0 + "\t")
+                elif X == b:
+                  out_file.write(allele1 + "\t")
+                else:
+                  out_file.write("." + "\t")
+        
+        out_file.write("\n")
+
+        out_file.write(SNP_name+".1" + "\t")
+        z = 0
+        for j in split_SNP_line:
+            #print j
+
+            z = z + 1
+            if z > 9 and z < len(header_line)+1:
+                # split the genotype cell
+                gen_data = j.split(":")
+          #      #print gen_data[0]
+                genotype = gen_data[0]#.split("/")
+                #print genotype
+                #the genotype call #/# has a " character attached, this next line removes the "
+                genotype = re.sub('\"','',genotype)
+                allele_data = genotype.split("/")
+                X = allele_data[1]
+                #print genotype
+                #write out the first genotype call
+                if  X == a:
+                  out_file.write(allele0 + "\t")
+                elif X == b:
+                  out_file.write(allele1 + "\t")
+                else:
+                  out_file.write("." + "\t")
+                  
+                
+        out_file.write("\n")
+        
+
+out_file.close()  # script parse vcf file get alleles per individual
+
+```
+#Transpose
+  Transpose allele information produced in the python parse script
+  Build BASE WAE data set with all samples (845)
+```{r}
+#Read in the parsed vcf and transpose, we're going to 
+vcf_input = read.delim("./dummy_data/haplotype_alleles-4rubias.vcf",sep="\t",header=TRUE, na.strings = "-")
+transposed_data1 = as.data.frame(as.matrix(t(vcf_input)))
+#
+#remove raw vcf array and allocate naming vectors to build the base of the final rubias dataset
+rm(vcf_input)
+WAE_base = as.data.frame(matrix(NA,
+                                nrow = nrow(transposed_data1)-1,
+                                ncol = ncol(transposed_data1)+4))
+Hsub = t(as.vector(transposed_data1[1,1:ncol(transposed_data1)]))
+#
+#build base of final rubias dataset, bringing names from parsed vcf
+for (i in 1:ncol(WAE_base)) {
+  if (i == 1) {
+    colnames(WAE_base)[i] = 'sample_type'
+  }
+  else if (i == 2) {
+    colnames(WAE_base)[i] = 'repunit'
+  }
+  else if (i == 3) {
+    colnames(WAE_base)[i] = 'collection'
+  }
+  else if (i == 4) {
+    colnames(WAE_base)[i] = 'indiv'
+  }
+  else
+    colnames(WAE_base)[i] = Hsub[i-4,1]
+}
+rm(Hsub)
+#
+#write the transposed file out and read it back in due to poor R df manipulation skills
+write.csv(transposed_data1, "./transposed_vcf_alleles.csv")
+rm(transposed_data1)
+transposed_data2 = read.csv("./transposed_vcf_alleles.csv", sep = ",")
+#
+#bring the transposed data into the base rubias dataset
+head(transposed_data2)
+WAE_base[,4:ncol(WAE_base)] = transposed_data2[2:nrow(transposed_data2),1:ncol(transposed_data2)]
+rm(transposed_data2)
+WAE_base = WAE_base[-nrow(WAE_base),]
+#
+#add collection info to base dataset, type cast col 1:4 as characters
+metaData_collection= gsub("\\d+", "", WAE_base$indiv)
+WAE_base$collection = as.character(metaData_collection)
+rm(metaData_collection)
+WAE_base$indiv = as.character(WAE_base$indiv)
+write.csv(WAE_base,"rubias_WAE_base_haplotype_data_alleles.csv")
+head(WAE_base)
+```
+

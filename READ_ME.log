@@ -1,0 +1,7 @@
+Steps taken to reproduce GSI (rubias) and Parentage (CKMRsim) analysis
+
+Filter Steps:
+
+Converting VCF for rubias:
+	use the python script VCF_2_rubias.mb.py 
+	output file 
