@@ -7,6 +7,7 @@ output: html_document
 This module will need two dependent inputs, 
 1) The formatted rubias dataframe, produced using vcf_2_rubias.Rmd
 2) An associated table of metadata for each SNP/micro-haplotype that will allow you to select markers based on diversity statistics, e.g., FST or mhap_He
+      This file can be produced using SNP_summary_table.Rmd
 #Dependencies
 ```{r}
 '%!in%' <- function(x,y)!('%in%'(x,y))
