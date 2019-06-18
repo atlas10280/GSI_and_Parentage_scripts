@@ -1,0 +1,205 @@
+---
+title: "create locus summary from VCF file"
+author: "Peter Euclide"
+edits: "Matt Bootsma"
+date: "August 17, 2018"
+output: html_document
+---
+
+#Dependencies
+```{r}
+library(tidyr)
+library(dplyr)
+library(vcfR)
+library(raster)
+library(diveRsity)
+library(adegenet)
+library(devtools)
+library(hierfstat)
+library(pegas)
+```
+#Initial commit by Peter, documentation left as is
+```{r}
+vcf <- read.vcfR("./TEST_data/TEST_populations.haps.vcf", verbose = FALSE )
+#add ID column ---------
+vcf <- addID(vcf, sep = "_")
+
+# create tidy dataset ---------
+tidy_data <- vcfR2tidy(vcf)
+
+# calculate summary stats ---------
+popsum <- gt.to.popsum(vcf)
+
+# calculate distance statisitics ---------
+my_pops <- as.factor(gsub("\\d+", "", unique(tidy_data$gt$Indiv))) # this is just script creating a vector of pops for each individual. This will change for every dataset depending on nameing structure. 
+
+fst_sum <- genetic_diff(vcf, my_pops)
+
+# create combined dataset ---------
+## There is a lot more information estimated above than needs to be in the final table. Look through each file to determine what information is imporant to you and create a custom table
+summary_table1 <- cbind(tidy_data$fix[c("ChromKey", "CHROM", "POS", "ID", "REF", "ALT", "AF", "NS")], popsum[,c("Allele_counts", "He", "Ne")], fst_sum[,c("Gst","Gstmax")])
+```
+#Calculate CHROM and locus quality
+```{r SNP and Locus quality functions}
+# # Arguments: --------------
+
+# data - A dataframe in tidy format constructed from vcfR2tidy() function
+
+# -------------------
+
+# calculate SNP quality score funciton: (average genotyping rate across SNP)
+SNP_quality <- function(data){
+  tidy_data$gt %>%
+  group_by(ChromKey, POS) %>%
+  summarise(GT_rate = sum(!is.na(gt_GT))/length(POS))
+}
+
+# calculate locus quality score (average genotyping rate across locus)
+locus_quality <- function(data){
+  tmp <- data$gt %>%
+  group_by(ChromKey) %>%
+  summarise(locus_quality = sum(!is.na(gt_GT))/length(ChromKey))
+}
+
+locus_quality_no_PE <- function(data){
+  tmp <- data$gt %>%
+  filter(POS < 141)  %>%
+  group_by(ChromKey) %>%
+  summarise(locus_quality_no_PE = sum(!is.na(gt_GT))/length(ChromKey))
+}
+  
+
+# combine data
+SNP_quality_tab <- SNP_quality(tidy_data)
+locus_quality_tab <- locus_quality(tidy_data)
+
+locus_quality_no_PE_tab <- locus_quality_no_PE(tidy_data)
+
+summary_table2 <- left_join(SNP_quality_tab, locus_quality_tab, by = "ChromKey")
+
+summary_table2 <- left_join(summary_table2, locus_quality_no_PE_tab, by = "ChromKey")
+```
+#Create final table
+```{r}
+# create New ID column to join by
+summary_table1$ChromKey_pos <- paste(summary_table1$ChromKey, summary_table1$POS, sep = "_")
+summary_table2$ChromKey_pos <- paste(summary_table2$ChromKey, summary_table2$POS, sep = "_")
+
+# Join by new ID
+summary_table_final <- left_join(summary_table1, summary_table2, by = "ChromKey_pos")
+
+# subset to desired columns (again, this might vary by preference. check the table before subsetting)
+summary_table_final <- summary_table_final[,-c(14,15,16)]
+
+# write final table
+write.table(summary_table_final, "./TEST_data/test_hap_summary_table.tsv", quote = F, row.names = F, sep = "\t")
+```
+
+#Calc Ho and He
+#Using summary (adegenet)
+```{r}
+snps = read.genepop("../../Populations/v4H_populations.snps.gen", ncode = 3)
+synopsis_snps = summary(snps)
+synopsis_snps
+```
+
+```{r}
+SNP_summary_table$Ho = synopsis_snps$Hobs
+SNP_summary_table$He = synopsis_snps$Hexp #in random position as already bound by another calculation, values replaced, difference <0.009
+#write.csv(SNP_summary_table, "SNP_summary_table_v3.csv")
+```
+
+```{r}
+SNP_summary_table_240 = SNP_summary_table
+SNP_summary_table = cbind(SNP_summary_table,bstats_snps$fis[2:24])
+```
+
+```{r}
+write.csv(SNP_summary_table, "SNP_summary_table_vF.csv")
+```
+
+```{r}
+plot_data = read.csv("./SNP_summary_table_vFormatHand.csv")
+attach(plot_data)
+plot_data = plot_data[order(neg_log_qval_all,fst_all),]
+
+```
+```{r}
+#library(plot3D)
+
+x=neg_log_qval_WI
+y=neg_log_qval_wisc.chip
+z=neg_log_qval_all
+fit = lm(z~x+y)
+x[is.na(x)] = 0
+y[is.na(y)] = 0
+
+grid.lines = 5
+x.pred <- seq(min(x), max(x), length.out = grid.lines)
+y.pred <- seq(min(y), max(y), length.out = grid.lines)
+xy <- expand.grid( x = x.pred, y = y.pred)
+z.pred <- matrix(predict(fit, newdata = xy),
+                  nrow = grid.lines, ncol = grid.lines)
+
+fitpoints <- predict(fit)
+pdf("./3d_test.pdf")
+par(mfrow = c(1,1))
+for (i in seq(1,180,5)) {
+  scatter3D(x, y, z, pch = 18, cex = 2, 
+    theta = i, phi = 20, ticktype = "detailed",
+    xlab = "neg_log_qval_WI", ylab = "neg_log_qval_wisc.chip", zlab = "neg_log_qval_all",
+   # surf = list(x = x.pred, y = y.pred, z = z.pred),
+    fit = fitpoints,facets = NA)
+     
+}
+dev.off()
+    #surf = list(x = x.pred, y = y.pred, z = z.pred,  
+    #facets = NA, fit = fitpoints), main = "SNPS")
+```
+#Global Fis
+  #see genepop file used, I simply grouped the data into one panmictic population and added a second group of fake data 
+  #extracted the Fis for the panmictic group and used it as my global Fis
+```{r}
+bstats = basicStats("../../Populations/v4H_global_populations.snps.gen","v4H_global_Fis.txt",
+           fis_ci = FALSE, ar_ci = FALSE)
+
+```
+```{r}
+ref_table_tmp = read.csv("./SNP_summary_table_vFormatHand.csv",header = TRUE)
+ref_table_tmp$Fis_global = bstats$fis$Delavan_01
+head(bstats)
+write.csv(ref_table_tmp,"./SNP_summary_table_vFormatHand2.csv")
+
+```
+
+#check Fst using diveRsity (diffcalc)
+```{r}
+
+#WAE_pops = read.genepop("../../Populations/v4H_populations.snps.gen", ncode = 3)
+#Fstats = diffCalc("../../Populations/v4H_populations.snps.gen","./Fst_global-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
+#WAE_haps = read.genepop("../../Populations/Haploid/populations.haplotypes.gen", ncode = 2)
+Fstats = diffCalc("../../Populations/Haploid/populations.haplotypes.gen","./Fst_haps-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
+```
+#maf calculated in rubias_work_allele_parse.rmd
+```{r}
+head(WAE_base)
+```
+
+#build haplotype data (STACKS)
+  #make individual pop map from individuals listed in WAE_base
+```{r}
+write.table(WAE_base$indiv, "../STACKS_pipeline/haplotype_data/hap_pipe_good_indv.txt", row.names = FALSE, col.names = FALSE)
+
+```
+#haplotype Ho and He
+```{r}
+snps = read.genepop("../../Populations/Haploid/populations.haplotypes.gen", ncode = 2)
+synopsis_snps = summary(snps)
+head(synopsis_snps$Hobs)
+
+out = cbind(synopsis_snps$Hobs,synopsis_snps$Hexp,synopsis_snps$loc.n.all)
+colnames(out) = c("Ho","He","n_alleles")
+head(out)
+write.csv(out, file = "./Haplotype_heterozygosity.csv")
+```
+
