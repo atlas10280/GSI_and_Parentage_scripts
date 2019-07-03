@@ -1,7 +1,20 @@
 Steps taken to reproduce GSI (rubias) and Parentage (CKMRsim) analysis
 
-Filter Steps:
+Take Filtered SNP data. My work used microhaplotype data, and I would recommend it for assay design.
 
-Converting VCF for rubias:
-	use the python script VCF_2_rubias.mb.py 
-	output file 
+Calculate summary stats in the SNP_summary_table.Rmd module
+
+Select loci to simulate with, using the pick_panel_loci.Rmd 
+	For me it typically turns into a running script with each panel getting it's own block which is great for method documentation.
+	This could be made into a function, but potential variation in selection methods has stopped me from doing this as of now
+
+NOTE: You will need to create the global variable with your selected loci "loci_for_panel" in the pick_panel_loci.Rmd script and pass this 
+	to your simulations, so you are properly indexing the loci you wish to test.
+
+GSI Simulations (100% sims in rubias)	
+Format vcf to rubias format in the top half of the GSI_100perCent_Sims.Rmd
+		run simulations in bottom half
+
+Parentage Simulations (CKMrsim)
+Format vcf to CKMrsim format in top half
+	run simulations in bottom half

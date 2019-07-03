@@ -1,0 +1,56 @@
+---
+title: "pick_panel_loci"
+author: "Matthew Bootsma"
+date: "June 5, 2019"
+output: html_document
+---
+This script is designed to be used as a component of the parentage_module and GSI_module (yet to be merged into one pipeline)
+It will allow you to subset your data from all of the SNPs to just the group you've identified as a potential assay subset
+While copy and pasting is generally poor coding practice, and signifies a function or loop could be impimented, panel development requires documentation for reproducability so I suggest making a new block for every panel and using this script as a workspace to track a particular project's progress and selection methods.
+
+As input, this script requires a table that has SNPs labeled by SNP name, SNP position (POS) and Locus ID (#CHROM in STACKS).
+We will use these names to directly index markers in rubias and CKMRsim. The table should then contain associated diversity statistics that you would like to rank and select markers by, e.g., FST or He
+
+#Dependencies
+```{r}
+#make a not in function for finding distinct loci
+'%!in%' <- function(x,y)!('%in%'(x,y))
+library(dplyr)
+```
+
+#PANEL: FST_test
+```{r}
+#Name each test something new and select how many loci per selection category. 
+#Consider the order you select categories as there will be some overlap in loci and we are selecting without replacement.
+panel_name = "dev_primers_data"
+N_panel_loci = 600
+N_FST_LOCI = 350
+N_mHap_HE_LOCI = N_panel_loci - N_FST_LOCI
+
+#Read selection table
+selection_dat = read_excel("./TEST_data/TEST_SNP_selection_table_v3.1.xlsx",sheet = "SNP_selection_table_v3")
+# Not all loci initially selected will work for primer design, use this logic once you've identified which loci can't work to fill up the quota
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_primed),]
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_not_primed),]
+
+#Filter any SNPs with FIS that is outside the range of -0.2 - 0.2
+selection_dat_FIS = selection_dat[which(selection_dat$`Fis-diffCalc` > -0.2 & selection_dat$`Fis-diffCalc` < 0.2),]
+#Filter out any markers with position <17 to allow for primer design 
+#This information will still be present in the sequence data so you can design a wobble position
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$POS > 16),]
+
+#GRAB GSI SNPS
+##Grab the highest FST loci based on single SNP FST
+selection_dat_FST = arrange(selection_dat_FIS,desc(`Fst-diffCalc`))
+LOCI_FST_only = unique(selection_dat_FST$LOCUS_ID)[1:N_FST_LOCI]
+
+#GRAB PARENTAGE SNPS
+#remove loci in the FST panel from this data we're getting He markers from
+#good parentage snps will have a high HAP_He
+selection_dat_parentage = arrange(selection_dat_FIS,desc(`HAP_He-adegenet-summary`))
+selection_dat_parentage = selection_dat_parentage[which(selection_dat_parentage$LOCUS_ID %!in% LOCI_FST_only),]
+LOCI_parentage = unique(selection_dat_parentage$LOCUS_ID)[1:N_mHap_HE_LOCI]
+#GREAT, now we can merge them to get the panel and give it a test
+#SELECT n FST based loci in the first range argument
+loci_for_panel = c(LOCI_FST_only,LOCI_parentage)
+```

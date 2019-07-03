@@ -1,0 +1,580 @@
+---
+title: "pog_gen_SNPs_assignment_analyses"
+author: "Matthew Bootsma"
+date: "April 23, 2019"
+output: html_document
+---
+This analysis is only to asses GSI accuracy as of 4/23/2019
+
+This analysis is based on the scripts used in development and implimentation of GSI+Parentage pipeline in the SNP selection phase of project 1710
+    which were derived from Baetscher et al.
+
+This version is what I'm using to re-run GSI with barcode repair pipeline data
+
+#dependencies
+```{r}
+'%!in%' <- function(x,y)!('%in%'(x,y))
+library(readxl)
+library("tidyverse", lib.loc="~/R/win-library/3.5")
+library("dplyr", lib.loc="~/R/win-library/3.5")
+library("tictoc", lib.loc="~/R/win-library/3.5")
+library(ggplot2)
+library(egg)
+library("rubias", lib.loc="~/R/win-library/3.5")
+#Note:
+  #Specific steps were taken to get the CKMRsim package running
+  #this involved downloading from Eric's github and removing the 'read_mendel' module from every location 
+#e.g. compiler, script, etc.
+#This likely disables the ability to produce figure 4 from the paper but we just want to compare figure 3 across data sets
+library(CKMRsim)
+library(raster)
+library(reticulate)
+#beepr makes a beep when long sections are done! how fun :)
+library(beepr)
+```
+
+#-----Data Prep-----
+#Parse
+  Parse alleles from raw haps.vcf output produced in stacks_2
+```{python}
+# script parse haps.vcf file get alleles per individual
+# script parse vcf file get alleles per individual
+import os
+import re
+os.getcwd()
+os.chdir("I:/WAE_RAD_Data/BARCODE_REPAIR_data/reFilter/IAGLR_bandaid_fix/SNPs/haps/")
+# open vcf file read all lines into an array, close file
+raw_vcf_file = open("populations.haps.vcf", "r")
+raw_vcf_array = raw_vcf_file.readlines()
+raw_vcf_file.close()
+
+# open file you are going to write new results to
+out_file = open("IGALR_haps4rubias.vcf", "w")
+r = 1
+# for each line in vcf file
+a = str(0)
+b = str(1)
+for i in raw_vcf_array:
+    # this is trying to recognize the header line
+    if i.startswith("#CHROM"):
+
+        # hard code column names you want
+            out_file.write("SNP_ID" + "\t")
+            header_line = i.rstrip().split("\t")
+            # write individual names
+            z = 0
+            for j in header_line:
+                z = z + 1                
+                if z > 9 and z < len(header_line)+1:
+                    out_file.write(j + "\t")                 
+                #else: out_file.write(j)
+
+            out_file.write("\n")
+            # at this point we should have header line
+
+    # use the if not # to go to the data
+    elif "#" not in i:
+        #write SNP name (allele 1)
+        split_SNP_line = i.rstrip().split("\t")
+        #print locus CHROM
+        out_file.write(split_SNP_line[0] + "\t")
+        #Store the locus ID in variable locus_ID
+        locus_ID = split_SNP_line[0]
+        #Store the haplotype alleles in an array, they will be delimited by ","
+        haplotypes = split_SNP_line[3]+","+split_SNP_line[4]
+        #immediately break this haplotype allele array into it's components for indexing down the line
+        haplotypes = haplotypes.split(",")
+        #print(haplotypes)
+
+        # iterates through individual SNP calls
+        z = 0
+        for j in split_SNP_line:
+            #print j
+
+            z = z + 1
+            if z > 9 and z < len(header_line)+1:
+                # this loop is to make an exception for missing genotypes,
+                # which we expect to be "./."
+                if j.startswith("."):
+                    out_file.write("-"+"\t")
+                else:
+                    # split the haplotype cell
+                    gen_data = j.split(":")
+                    #print(gen_data)
+                    gen_data = gen_data[0]
+                    #print(gen_data)
+                    gen_data = gen_data.split("/")
+                    #print(gen_data)
+                    #gen_data = re.sub('\"','',gen_data)
+                    #print(gen_data)
+                    # I'm expecting shit to get funky if i call an index directly using the
+                    #   value stored in gen_data so I'm going to explicitly assign these to objects
+                    index1 = int(gen_data[0])
+                    index2 = int(gen_data[1])
+                    #print(index1)
+                    #print(haplotypes[index1])
+                    #use the index stored in the vcf genotype call to index from haplotypes array
+                    out_file.write(haplotypes[index1] + "\t")
+                    #print gen_data[0]
+                    genotype = gen_data[0]
+                    #print genotype
+                    #the genotype call #/# has a " character attached, this next line removes the "
+                    #genotype = re.sub('\"','',genotype)
+
+        out_file.write("\n")
+        #print locus CHROM.1 this builds the second allele call for a locus
+        out_file.write(split_SNP_line[0]+".1" + "\t")
+        z = 0
+        for j in split_SNP_line:
+            z = z + 1
+            if z > 9 and z < len(header_line) + 1:
+                # this loop is to make an exception for missing genotypes,
+                # which we expect to be "./."
+                if j.startswith("."):
+                    out_file.write("-" + "\t")
+                else:
+                    # split the haplotype cell
+                    # split the haplotype cell
+                    gen_data = j.split(":")
+                    #print(gen_data)
+                    gen_data = gen_data[0]
+                    #print(gen_data)
+                    gen_data = gen_data.split("/")
+                    #print(gen_data)
+                    # I'm expecting shit to get funky if i call an index directly using the
+                    #   value stored in gen_data so I'm going to explicitly assign these to objects
+                    index1 = int(gen_data[0])
+                    index2 = int(gen_data[1])
+                    # use the index stored in the vcf genotype call to index from haplotypes array
+                    out_file.write(haplotypes[index2] + "\t")
+                    # print gen_data[0]
+                    genotype = gen_data[0]
+                    # print genotype
+                    # the genotype call #/# has a " character attached, this next line removes the "
+                    # genotype = re.sub('\"','',genotype)
+        #at this point both alleles should be processed. add a new line for the next locus iteration
+        out_file.write("\n")
+        
+
+out_file.close()  # script parse vcf file get alleles per individual
+
+```
+#Transpose
+  Transpose allele information produced in the python parse script
+  Build BASE WAE data set with all samples
+```{r}
+#Read in the parsed vcf and transpose, we're going to 
+vcf_input = read.delim("I:/WAE_RAD_Data/BARCODE_REPAIR_data/reFilter/IAGLR_bandaid_fix/SNPs/haps/IGALR_haps4rubias.vcf",sep="\t",header=TRUE, na.strings = c("-","."))
+transposed_data1 = as.data.frame(as.matrix(t(vcf_input)))
+#
+#remove raw vcf array and allocate naming vectors to build the base of the final rubias dataset
+rm(vcf_input)
+WAE_base = as.data.frame(matrix(NA,
+                                nrow = nrow(transposed_data1)-1,
+                                ncol = ncol(transposed_data1)+4))
+Hsub = t(as.vector(transposed_data1[1,1:ncol(transposed_data1)]))
+#
+#build base of final rubias dataset, bringing names from parsed vcf
+for (i in 1:ncol(WAE_base)) {
+  if (i == 1) {
+    colnames(WAE_base)[i] = 'sample_type'
+  }
+  else if (i == 2) {
+    colnames(WAE_base)[i] = 'repunit'
+  }
+  else if (i == 3) {
+    colnames(WAE_base)[i] = 'collection'
+  }
+  else if (i == 4) {
+    colnames(WAE_base)[i] = 'indiv'
+  }
+  else
+    colnames(WAE_base)[i] = Hsub[i-4,1]
+}
+rm(Hsub)
+#
+#write the transposed file out and read it back in due to poor R df manipulation skills
+write.csv(transposed_data1, "./transposed_vcf_hap_alleles_4_rubias.csv")
+rm(transposed_data1)
+transposed_data2 = read.csv("./transposed_vcf_hap_alleles_4_rubias.csv", sep = ",")
+#
+#bring the transposed data into the base rubias dataset
+head(transposed_data2)
+WAE_base[,4:ncol(WAE_base)] = transposed_data2[2:nrow(transposed_data2),1:ncol(transposed_data2)]
+rm(transposed_data2)
+WAE_base = WAE_base[-nrow(WAE_base),]
+#
+#add collection info to base dataset, type cast col 1:4 as characters
+metaData_collection= gsub("\\d+", "", WAE_base$indiv)
+WAE_base$collection = as.character(metaData_collection)
+rm(metaData_collection)
+WAE_base$indiv = as.character(WAE_base$indiv)
+write.csv(WAE_base,"rubias_hap_allele_data.csv")
+head(WAE_base)
+beep()
+```
+#Define Reporting Units
+  training and holdout requires just that. We're going to split samples 50/50 assigning every other one to reference/mixture groups
+  this section will also define reporting units for 1710_WAE data specifically
+```{r}
+#read in data EVEN IF you've already done the conversion from .vcf
+WAE_base = read.csv("./rubias_hap_allele_data.csv", colClasses = c("character"), row.names = NULL)
+WAE_base[,sapply(WAE_base,class) == "logical"] <-
+  sapply(WAE_base[,sapply(WAE_base,class) == "logical"],
+         function(i) substr(as.character(i),1,1))
+WAE_base = WAE_base[,-1]
+
+WAE_base$repunit = as.character(WAE_base$repunit)
+for (i in 1:nrow(WAE_base)) {
+  
+  if(WAE_base[i,3] == "Lake_Wisconsin.."|
+     WAE_base[i,3]== "Big_Arbor_Vitae.."|
+     WAE_base[i,3]== "Kawaguesaga.."|
+     WAE_base[i,3]== "Medicine_Lake.."|
+     WAE_base[i,3]== "Sanford_Lake.."|
+     WAE_base[i,3]== "Willow_Flowage.."|
+     WAE_base[i,3]== "Escanaba.."){
+    
+    WAE_base[i,2] = "Rep_U-Wisconsin"
+  }
+  
+  else if(WAE_base[i,3] == "Chippewa_Flowage.."|
+          WAE_base[i,3]== "Eau_Claire_River.."|
+          WAE_base[i,3]== "Lake_Millicent.."|
+          WAE_base[i,3]== "Manitowish_Lake.."|
+          WAE_base[i,3]== "Turtle_Flambeau_Flowage.."){
+    
+    WAE_base[i,2] = "Rep_U-Chippewa"
+  }
+  
+  else if(WAE_base[i,3] == "Cutfoot_Sioux.."){
+    WAE_base[i,2] = "Rep_U-Cutfoot_Sioux"
+  }
+  else if(WAE_base[i,3]== "Lake_Koronis.."){
+    WAE_base[i,2] = "Rep_U-Lake_Koronis"
+  }
+  else if(WAE_base[i,3]== "Mille_Lacs.."){
+    WAE_base[i,2] = "Rep_U-Mille_Lacs"
+  }
+  else if(WAE_base[i,3]== "Ottertail_Lake.."){
+    WAE_base[i,2] = "Rep_U-Ottertail_Lake"
+  }
+  else if(WAE_base[i,3]== "Pike_River.."){
+    WAE_base[i,2] = "Rep_U-Pike_River"
+  }
+  else if(WAE_base[i,3]== "Pine_River.."){
+    WAE_base[i,2] = "Rep_U-Pine_River"
+  }
+  else if(WAE_base[i,3]== "Red_Lake.."){
+    WAE_base[i,2] = "Rep_U-Red_Lake"
+  }
+  else if(WAE_base[i,3]== "Sarah_Lake.."){
+    WAE_base[i,2] = "Rep_U-Sarah_Lake"
+  }
+  else if(WAE_base[i,3] == "Delavan.."){
+    WAE_base[i,2] = "Rep_U-Delavan"
+  }
+  else if(WAE_base[i,3] == "WolfR_."){
+    WAE_base[i,2] = "Rep_U-Wolf_River"
+  }
+  else if(WAE_base[i,3] == "St_Louis_River.."){
+    WAE_base[i,2] = "Rep_U-St_Louis"
+  }
+  else{
+    WAE_base[i,2] = "Rep_U-Other"
+  }
+}
+
+WAE_base$repunit = as.factor(WAE_base$repunit)
+head(WAE_base)
+beep()
+WAE_base[which(WAE_base$collection == "Rep_U-Other"),]
+```
+#Define reference and mixture
+#SELECT SNPS HERE
+  NO FAKE POPS IN REFERENCE
+```{r}
+natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),rubias_index]
+# natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),]
+
+#NOTE: for odd number of samples, use line 279 in place of line 278
+# natural_WAE$sample_type = c(rep(c("reference","mixture"),nrow(natural_WAE)/2))
+natural_WAE$sample_type = c(rep(c("reference","mixture"),nrow(natural_WAE)/2),"reference")
+
+head(natural_WAE)
+
+#if you have samples you don't want in the training but do want in the holdout, put them here
+# fake_WAE = WAE_base[which(WAE_base$collection %in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),]
+# fake_WAE$sample_type = "mixture"
+
+repU_defined_WAE = rbind.data.frame(
+  natural_WAE)  #, fake_WAE)
+#subsetting the known collection data so we can easily subset correct vs incorrect assignments post mixture analysis
+known_collection_meta_dat = repU_defined_WAE$collection
+known_repU_meta_dat = repU_defined_WAE$repunit
+repU_defined_WAE = cbind.data.frame(known_collection_meta_dat,known_repU_meta_dat,repU_defined_WAE)
+
+repU_defined_WAE$repunit = as.character(repU_defined_WAE$repunit)
+
+repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"repunit"] = NA
+repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"collection"] = "Mixed_collection"
+
+repU_defined_WAE[] = lapply(repU_defined_WAE, as.character)
+# save(repU_defined_WAE,file = "./rubias_hap_training_and_holdout_data.rda")
+# save(known_collection_meta_dat, file =  "./rubias_hap_results_collection_metadata.rda")
+# save(known_repU_meta_dat, file =  "./rubias_hap_results_reporting_unit_metadata.rda")
+beep()
+```
+
+#------Simulations------
+#infer mixture 
+you can load the formatted RDA(s) and go from here
+```{r}
+# load("./rubias_training_and_holdout_data.rda")
+# load("./rubias_results_collection_metadata.rda")
+# load("./rubias_results_reporting_unit_metadata.rda")
+set.seed(651652)
+#Trial1: Infer Mixture using all SNPs
+#half samples allocated to mix half to ref
+tic('test: infer_mixture(method=MCMC)')
+test_mixture = infer_mixture(
+  reference = repU_defined_WAE[which(repU_defined_WAE$sample_type == "reference"),],
+  mixture = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),],
+  gen_start_col = 7, method = "MCMC", reps = 10000, burn_in = 1000)
+toc()
+
+# tic('test: infer_mixture(method=PB)')
+# test_mixture = infer_mixture(
+#   reference = repU_defined_WAE[which(repU_defined_WAE$sample_type == "reference"),],
+#   mixture = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),],
+#   gen_start_col = 7, method = "PB", reps = 10000, burn_in = 1000)
+# toc()
+#lets you know when to stop reading reddit memes or looking at cats
+beep()
+Sys.sleep(2)
+beep()
+Sys.sleep(2)
+beep()
+Sys.sleep(2)
+beep()
+```
+#------Process Output------
+  Calculates the max log(likelihood) for an individual and calls that the assignment
+  Make sure to specify the output name as something relevent to the sampled data
+  
+  THIS SECTION WRITES CSV 3X DON'T OVERWRITE!!!
+#report by population
+```{r}
+temp = test_mixture$indiv_posteriors
+
+# assigned_max_log_like = temp %>% 
+#   group_by(indiv) %>% 
+#   mutate(infered_collection = collection[which.max(log_likelihood)],
+#          infered_repU = repunit[which.max(log_likelihood)])
+#filter to just the max_likelihood assignment per individual
+
+
+#get the known collection meta data back in
+#some hard conding based on n_pops (ndistinct give n + 1 for "Mixed_collection") 
+#and n_mixed_collection_individuals (length(which("Mixed_collection")))
+
+tmp_meta = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),1:2]
+
+known_collection = NULL
+for (i in 1:length(which(repU_defined_WAE$collection == "Mixed_collection"))) {
+  known_collection = c(known_collection,rep(tmp_meta[i,"known_collection_meta_dat"], times = n_distinct(repU_defined_WAE$collection)-1))
+}
+known_repu = NULL
+for (i in 1:length(which(repU_defined_WAE$collection == "Mixed_collection"))) {
+  known_repu = c(known_repu,rep(tmp_meta[i,"known_repU_meta_dat"], times = n_distinct(repU_defined_WAE$collection)-1))
+}
+temp = cbind.data.frame(known_collection, known_repu,temp)
+
+unique(temp$known_collection)
+```
+
+```{r}
+#filter to just the max_likelihood assignment per individual
+assigned_max_log_like = temp %>% 
+  group_by(indiv) %>% 
+  filter(log_likelihood == max(log_likelihood))
+
+
+#subset the most likely assignment
+# assignment_result = assigned_max_log_like %>% 
+#   group_by(indiv) %>% 
+#   filter(log_likelihood == max(log_likelihood))
+
+# #count correct and incorrect assignments by lake
+assignment_result_by_lake = assigned_max_log_like %>%
+  group_by(known_collection,collection) %>%
+  summarise(n())
+
+assignment_result_by_lake = assignment_result_by_lake %>% ungroup(assignment_result_by_lake)
+
+#prepare plot x, y values
+#X is the assigned pop, Y is the origins population
+whitelist = read.csv("./1710_GSI_plot_XY_metadat_by_collection_IAGLR_pops.csv")
+whitelist$collection = as.character(whitelist$collection)
+assignment_result_by_lake$known_collection = as.character(assignment_result_by_lake$known_collection)
+assignment_result_by_lake$collection = as.character(assignment_result_by_lake$collection)
+
+assignment_result_by_lake$x_val = NA
+assignment_result_by_lake$y_val = NA
+assignment_result_by_lake = as.data.frame(assignment_result_by_lake)
+
+for (i in 1:nrow(assignment_result_by_lake)) {
+  assignment_result_by_lake[i,"x_val"] = whitelist[which(whitelist$collection == assignment_result_by_lake[i,"collection"]),"xy_val"]
+  
+  assignment_result_by_lake[i,"y_val"] = whitelist[which(whitelist$collection == assignment_result_by_lake[i,"known_collection"]),"xy_val"]
+}
+
+#calculate proportion assigned to each collection
+#
+assignment_result_by_lake$prop_assigned = NA
+
+for (i in 1:nrow(assignment_result_by_lake)) {
+  assignment_result_by_lake[i,"prop_assigned"] = assignment_result_by_lake[i,"n()"]/sum(assignment_result_by_lake[which(assignment_result_by_lake$known_collection == assignment_result_by_lake[i,"known_collection"]),"n()"])
+}
+```
+#by pop plot
+```{r}
+#plot results
+pdf("./assignment_by_pop_IAGLR_hybrid(SNP)_haps.pdf", width = 11, height = 11)
+ggplot(assignment_result_by_lake, aes(x = x_val, y = y_val, size = prop_assigned))+
+  geom_point(alpha = 0.2, size = 12*assignment_result_by_lake$prop_assigned)+ 
+  geom_text(aes(label=round(prop_assigned*100,0)), size = 6)+ 
+  scale_y_continuous(
+    name = "Sampled Population",
+    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19),
+    labels=c("Delavan","Wolf River", "Lake Wisconsin",
+             "Medicine Lake","Willow Flowage",
+             "Big Arbor Vitae", "Manitowish Lake", "Turtle Flambeau Flowage",
+             "Chippewa Flowage", "Eau Claire River", "St. Louis River",
+             "Pike River", "Sarah Lake", "Lake Koronis",
+             "Mille Lacs", "Pine River", "Cutfoot Sioux",
+             "Ottertail Lake", "Red Lake")
+        )+
+  scale_x_continuous(
+    name = "Assigned Population",
+    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19),
+    labels=c("Delavan","Wolf River", "Lake Wisconsin",
+             "Medicine Lake","Willow Flowage",
+             "Big Arbor Vitae", "Manitowish Lake", "Turtle Flambeau Flowage",
+             "Chippewa Flowage", "Eau Claire River", "St. Louis River",
+             "Pike River", "Sarah Lake", "Lake Koronis",
+             "Mille Lacs", "Pine River", "Cutfoot Sioux",
+             "Ottertail Lake", "Red Lake")
+  )+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )+
+  geom_hline(yintercept = c(2.5,6.5,10.5), linetype = "dashed",
+   color = c("#CCCCCC","#CCCCCC","#000000"))+
+  geom_vline(xintercept = c(2.5,6.5,10.5), linetype = "dashed",
+   color = c("#CCCCCC","#CCCCCC","#000000"))+
+  ggtitle("Proportion of individuals assigned
+by lake")
+dev.off()
+```
+
+#report by RepU
+```{r}
+
+#####
+# #repeat, by reporting unit
+assignment_result_by_repU = assigned_max_log_like %>%
+  group_by(known_repu,repunit) %>%
+  summarise(n())
+
+assignment_result_by_repU = as.data.frame(assignment_result_by_repU)
+#prepare plot x, y values
+##X is the assigned pop, Y is the origins population
+whitelist = read.csv("./1710_GSI_plot_XY_metadat_by_repU.csv")
+whitelist$repunit = as.character(whitelist$repunit)
+assignment_result_by_repU$known_repu = as.character(assignment_result_by_repU$known_repu)
+assignment_result_by_repU$repunit = as.character(assignment_result_by_repU$repunit)
+#vectorize results
+assignment_result_by_repU$x_val = NA
+assignment_result_by_repU$y_val = NA
+#loop matches to whitelist and extracts the corresponding coordinate
+for (i in 1:nrow(assignment_result_by_repU)) {
+  assignment_result_by_repU[i,"x_val"] = whitelist[which(whitelist$repunit == assignment_result_by_repU[i,"repunit"]),"xy_val"]
+  
+  assignment_result_by_repU[i,"y_val"] = whitelist[which(whitelist$repunit == assignment_result_by_repU[i,"known_repu"]),"xy_val"]
+}
+#calculate proportion assigned to each collection
+assignment_result_by_repU$prop_assigned = NA
+
+for (i in 1:nrow(assignment_result_by_repU)) {
+  assignment_result_by_repU[i,"prop_assigned"] = assignment_result_by_repU[i,"n()"]/sum(assignment_result_by_repU[which(assignment_result_by_repU$known_repu == assignment_result_by_repU[i,"known_repu"]),"n()"])
+}
+
+
+beep()
+Sys.sleep(2)
+beep()
+```
+#by repu plot
+```{r}
+#plot results
+# pdf("./assignment_by_repu_IAGLR_hybrid(SNP)_haps.pdf", width = 11, height = 11)
+jpeg("./IAGLR_HE_GSI.jpg", width = 8, height = 8, units = "in", quality = 100, res = 300)
+ggplot(assignment_result_by_repU, aes(x = x_val, y = y_val, size = prop_assigned))+
+  geom_point(alpha = 0.2, size = 12*assignment_result_by_repU$prop_assigned)+ 
+  geom_text(aes(label=round(prop_assigned*100,0)), size = 6)+ 
+  # scale_y_continuous(
+  #   name = "Sampled Population",
+  #   breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+  #   labels=c("Delavan","Wolf River", "Upper Wisconsin",
+  #            "Upper Chippewa","St. Louis River","Pike River",
+  #            "Sarah Lake", "Lake Koronis", "Mille Lacs",
+  #            "Pine River", "Cutfoot Sioux","Ottertail Lake",
+  #            "Red Lake")
+  #       )+
+  scale_x_continuous(
+    name = "Assigned Population",
+    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels=c("Delavan","Wolf River", "Upper Wisconsin",
+             "Upper Chippewa","St. Louis River","Pike River",
+             "Sarah Lake", "Lake Koronis", "Mille Lacs",
+             "Pine River", "Cutfoot Sioux","Ottertail Lake",
+             "Red Lake")
+  )+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )+
+  geom_hline(yintercept = c(2.5,3.5,4.5), linetype = "dashed",
+   color = c("#CCCCCC","#CCCCCC","#000000"))+
+  geom_vline(xintercept = c(2.5,3.5,4.5), linetype = "dashed",
+   color = c("#CCCCCC","#CCCCCC","#000000"))#+
+  # ggtitle("Proportion of individuals assigned
+# by reporting unit")
+dev.off()
+```
+
+
+
+
+
+
+
+

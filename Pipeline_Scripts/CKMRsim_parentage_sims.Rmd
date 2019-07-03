@@ -1,0 +1,442 @@
+---
+title: "Parentage_module"
+author: "Matthew Bootsma"
+date: "June 5, 2019"
+output: html_document
+---
+Initial development of CKMRsim pipeline from VCF to CKMRsim data frame to simulation results
+Derived from preliminary work on 1710 SNP panel development
+
+#Dependencies
+```{r}
+'%!in%' <- function(x,y)!('%in%'(x,y))
+library(reticulate)
+library(dplyr)
+library(CKMRsim)
+library(tidyr)
+library(ggplot2)
+```
+
+#VCF 2 CKMRsim
+
+This script will take a haps.vcf and print each individual's haplotype call on a line for each locus.
+Does not function for SNPs.vcf
+
+```{python}
+#set working directory
+import os
+os.getcwd()
+os.chdir("I:/WAE_RAD_Data/pre_IAGLR/BARCODE_REPAIR_data/reFilter/IAGLR_bandaid_fix/SNPs/haps")
+# open file you are going to write new results to
+out_file = open("haps_vcf2ckmrsim_out.txt", "w")
+# open vcf file read all lines into an array, close file
+raw_vcf_file = open("populations.haps.vcf", "r")
+raw_vcf_array = raw_vcf_file.readlines()
+raw_vcf_file.close()
+# for each line in vcf file
+for i in raw_vcf_array:
+    # this is trying to recognize the header line
+    if i.startswith("#CHROM"):
+
+        # hard code column names you wan
+        out_file.write(
+            "locus" + "\t" + "indv" + "\t" + "gene.copy" + "\t" + "allele" + "\n")
+        header_line = i.rstrip().split("\t")
+        # grabbing individual names for use in the next loop
+        names = header_line[9:(len(header_line)+1)]
+        # at this point we should have header line
+
+    # use the if not # to go to the data
+    elif "#" not in i:
+        # split_ind_line is going to hold our genotype calls e.g., 0/2
+        split_ind_line = i.rstrip().split("\t")
+        #Store teh locus ID in variable locus_ID
+        locus_ID = split_ind_line[0]
+        #Store the haplotype alleles in an array, they will be delimited by ","
+        haplotypes = split_ind_line[3]+","+split_ind_line[4]
+        #immediately break this haplotype allele array into it's components for indexing down the line
+        haplotypes = haplotypes.split(",")
+
+        # iterates through individuals for each locus
+        z = 0
+        #y will be used for calling individual names for each line
+        y = 0
+        for j in split_ind_line:
+            z = z + 1
+            #we're only looking at values that hold a genotype call
+            if z > 9 and z < (len(split_ind_line)+1):
+                #this loop is to make an exception for missing genotypes,
+                # which we expect to be "./."
+                if j.startswith("."):
+                    #first, print the locus name
+                    out_file.write(split_ind_line[0] + "\t")
+                    #next, print the individual name
+                    out_file.write(names[y] + "\t")
+                    #next, print a gene.copy ID (hap1 or 2?)
+                    out_file.write("hap1" + "\t")
+                    #next, prepare and print allele 1
+                        #in this case, we expect it to be "./." or a missing call
+                    out_file.write("NA" + "\n")
+                    #proceed to print the second allele's information on a new line
+                    # first, print the locus name
+                    out_file.write(split_ind_line[0] + "\t")
+                    # next, print the individual name
+                    out_file.write(names[y] + "\t")
+                    # next, print a gene.copy ID (hap1 or 2?)
+                    out_file.write("hap2" + "\t")
+                    #last, print the second allele call
+                    out_file.write("NA" + "\n")
+                    y = y + 1
+
+
+                else:
+                    #first, print the locus name
+                    out_file.write(split_ind_line[0] + "\t")
+                    #next, print the individual name
+                    out_file.write(names[y] + "\t")
+                    #next, print a gene.copy ID (hap1 or 2?)
+                    out_file.write("hap1" + "\t")
+                    #next, prepare and print allele 1
+                        #split the genotype cell
+                    gen_data = j.split("/")
+                        #I'm expecting shit to get funky if i call an index directly using the
+                        #   value stored in gen_data so I'm going to explicitly assign these to objects
+                    index1 = int(gen_data[0])
+                    index2 = int(gen_data[1])
+                    out_file.write(haplotypes[index1] + "\n")
+                    #proceed to print the second allele's information on a new line
+                    # first, print the locus name
+                    out_file.write(split_ind_line[0] + "\t")
+                    # next, print the individual name
+                    out_file.write(names[y] + "\t")
+                    # next, print a gene.copy ID (hap1 or 2?)
+                    out_file.write("hap2" + "\t")
+                    #last, print the second allele call
+                    out_file.write(haplotypes[index2] + "\n")
+                    y = y + 1
+
+out_file.close()  # script parse vcf file get alleles per individual
+```
+
+#------CKMRsim------
+Read in the haplotype data that was produced in the VCF 2 CKMRsim block
+```{r}
+raw_hap_calls = read.csv("../SNPs/haps/haps_vcf2ckmrsim_out.txt", sep = "\t")
+#format as characters for CKMRsim
+raw_hap_calls[] = lapply(raw_hap_calls,as.character)
+head(raw_hap_calls,n = 200)
+```
+
+#Subset Loci
+
+This section will reduce the data frame with all of you haplotype calls to just the loci you want to test for a panel
+
+It is dependent upon the variable "loci_for_panel" which should be a list of locus names that you have selected for the simulation using the "pick_panel_loci" module
+
+I typically develope that list in a script that is dedicated to a particular SNP panel's development so I can keep documentation of the panel's development steps and each test panel's selection methods
+
+```{r}
+hap_calls_2test = raw_hap_calls[which(raw_hap_calls$locus %in% loci_for_panel),]
+# hap_calls_2test = raw_hap_calls
+```
+
+#Run Simulation
+Calculate Haplotype Frequenices/Sort
+```{r}
+#Calculate allele frequencies
+hapfreqs <- hap_calls_2test %>%
+  group_by(locus, allele) %>%
+  summarise(count = n()) %>%
+  mutate(Freq = count / sum(count))
+hapfreqs = na.omit(hapfreqs)
+#order by locus, then AF descending
+hapfreqs <- hapfreqs[order(hapfreqs$locus,-hapfreqs$Freq),] 
+#Add allele index by locus
+hapfreqs <- hapfreqs %>%
+  group_by(locus) %>%
+  mutate(AlleIdx = as.integer(factor(allele, levels = unique(allele)))) %>%
+  #ungrouping is useful when we group_by because we may come back to confusing errors resulting in things 
+  #being grouped in the background
+  ungroup() %>%
+  #remove any alleles with less than 2 calls across individuals for QAQC
+  subset(hapfreqs$count>2)
+#Remove monomorphic loci for CKMRsim
+hapfreqs <- hapfreqs[hapfreqs$locus %in% names(table(hapfreqs$locus))[table(hapfreqs$locus) > 1],]
+
+#Final formatting for CKMRsim
+hapfreqs$Allele = hapfreqs$allele
+mhaps <- hapfreqs %>%
+  ungroup() %>%
+  mutate(Chrom = "GTseq") %>%
+  rename(Locus = locus) %>%
+  dplyr::select(-count) %>%
+  mutate(Pos = as.integer(factor(Locus, levels = unique(Locus)))) %>%
+  mutate(LocIdx = 0,
+         AlleIdx = 0) %>%
+  CKMRsim::reindex_markers() %>%
+  dplyr::select(Chrom, Locus, Pos, Allele, LocIdx, AlleIdx, Freq)
+#head(mhaps)
+```
+
+create a CKMR object create_ckmr()
+```{r}
+CK <- create_ckmr(mhaps, kappa_matrix = kappas[c("PO", "FS", "HS", "U"), ])
+```
+
+Then we can simulate some Q values:
+```{r}
+Qs <- simulate_Qij(C = CK, froms = c("PO", "FS", "HS", "U"), tos = c("PO", "FS", "HS", "U"), reps = 10^4)
+
+# then do the  sampling to get the FPRs
+mc_sample_simple(Qs, nu = "PO", de = c("U", "FS"), tr = c("U", "FS"), method = "both")
+```
+
+
+Ranking and Selecting microhaps and SNPs
+
+Getting SNP frequencies
+To find the SNP frequencies, we are going to need to explode those haplotypes into constituent SNPs and estimate their frequencies, and then take the best SNPs from each microhaplotype to then select subsets of them.  We are going to operate on `mhaps` for this, and then get a data frame called `SNP_MAF_max` which are the SNP allele allele frequencies. We will filter that data frame later to get our different subsets of SNPs.
+```{r}
+# get all the SNP freqs
+snp_freqs <- mhaps %>%
+  split(f = mhaps$Locus) %>%
+  lapply(function(x) {
+    x$exploded = sapply(strsplit(x$Allele, split = ""), function(y) paste(y, collapse = "."))
+    x
+  }) %>%
+  lapply(., function(x) {
+    separate(x, exploded, into = paste("snp", 1:nchar(x$Allele[1]), sep = "_"))
+  }) %>%
+  lapply(., function(x) {
+    gather(x, key = "SNP", value = "base", contains("snp_"))
+  }) %>%
+  bind_rows %>%
+  group_by(Chrom, Locus, Pos, LocIdx, SNP, base) %>% 
+  summarise(Freq = sum(Freq))
+
+
+# now, get the best (MAF closest to 0.5)
+SNP_MAF_max <- snp_freqs %>%
+  group_by(Locus, SNP) %>%
+  filter(n() > 1) %>%  # toss SNPs that are monomorphic---for some reason there are some...
+  mutate(maf = min(Freq)) %>%  # since there are only two alleles, this gets the MAF at that locus
+  group_by(Locus) %>%
+  filter(near(maf, max(maf)))  %>%  # this almost does it, but some snps at a locus might have the same MAF at different snps
+  mutate(tmp = 1:n()) %>%
+  filter(tmp < 3)  %>% # this gets rid of those same MAF cases.
+  dplyr::select(-tmp, -maf) %>%
+  rename(Allele = base) %>%
+  mutate(AlleIdx = 0) %>%
+  CKMRsim::reindex_markers() %>%
+  dplyr::select(Chrom, Locus, Pos, Allele, LocIdx, AlleIdx, Freq)
+#We will come back to these to grab the allele frequencies for further analysis.
+```
+
+LISTING MARKERS TO TEST HERE: this should be the whole panel
+Simulate Error Rates 
+  this process will be performed on all data sets in the list below
+  currently every mhap and every SNP within said mhaps
+```{r}
+fourData_list <- list(
+  #WOULD BE NICE TO HAVE PANEL NAME AS THE DATA NAME HERE
+  #WE SHOULD BE ABLE TO CALL ALL MHAPS AND SNPS DIRECTLY BECAUSE THERE ARE ONLY 600 MHAPS
+  mic_hap = mhaps,
+  SNP = SNP_MAF_max
+)
+```
+
+
+Iterate over list
+```{r}
+CK_list <- lapply(fourData_list, function(x) 
+  create_ckmr(x, kappa_matrix = kappas[c("PO", "FS", "HS", "U"), ])
+)
+```
+
+
+simulate Qij values (10^5)
+```{r}
+Qs_list <- lapply(CK_list, function(x) 
+  simulate_Qij(C = x, froms = c("PO", "FS", "HS", "U"), tos = c("PO", "FS", "HS", "U"), reps = 10^5)
+)
+```
+
+sample the simulated values
+```{r}
+FPRs_etc <- lapply(Qs_list, function(x) mc_sample_simple(x, nu = c("PO", "FS", "HS"), method = "IS", FNRs = seq(0.01, 0.30, by = 0.01))) %>%
+  bind_rows(.id = "marker_set")
+```
+
+produce legible data structure of simulations
+```{r}
+FPRs_etc %>%
+  rename(relationship = pstar) %>%
+  dplyr::select(relationship, FNR, marker_set, FPR) %>%
+  tidyr::spread(data = ., key = marker_set, value = FPR)
+```
+
+#Write results
+Figure 3
+```{r}
+FPR_ses <- FPRs_etc %>%
+  mutate(se_lo = FPR - 2 * se,
+       se_hi = FPR + 2 * se)
+# create a factor for ordering the relationship type
+FPRs_etc$pstar_f = factor(FPRs_etc$pstar, levels=c("PO","FS", "HS"))
+# remove the HS rows and then plot that
+f3 <- FPRs_etc %>%
+  filter(., pstar_f != "HS") %>%
+  ggplot(., aes(x = FNR, y = FPR, shape = marker_set)) +
+  geom_point() +
+ #geom_segment(aes(x = FNR, y = se_lo, xend = FNR, yend = se_hi)) +  # these are basically invisible because they are so small
+  facet_grid(. ~ pstar_f) +
+  scale_y_continuous(trans = "log10") +
+  xlab("False Negative Rate") + 
+  # ylab("False Positive Rate (log)") +
+  theme_bw()
+fig3 <- f3 +
+  guides(shape=guide_legend(title="Marker Set")) +
+  theme(
+  axis.text.x=element_text(size=14),
+  axis.title.x=element_text(size=14, face="bold"),
+  # axis.text.y=element_text(size=14),
+  # axis.title.y=element_text(size=14, face="bold"),
+  legend.text=element_text(size=14),
+  legend.title=element_text(size=14, face="bold"))
+fig3 <- fig3 +
+  theme(legend.position = c(0.6, 0.15))
+jpeg("./IAGLR_HE_FPR_FNR.jpg", width = 12, height = 8, units = "in", quality = 100, res = 300)
+fig3
+dev.off()
+# and save that plot as Fig 3.
+#ggsave("output/Fig3.pdf", width = 9, height = 7, units = "in")
+ggsave(paste("./",panel_name,"-FPR-NR_curves.pdf",sep = ""), width = 9, height = 7, units = "in")
+```
+
+
+#other mhap paper figures
+   look at the distribution of the number of alleles across loci:
+```{r}
+##format/initialize plot
+m <- mhaps %>%
+  group_by(Locus) %>%
+  summarise(num_haplotypes = n()) %>%
+  group_by(num_haplotypes) %>%
+  summarise(num_loci = n()) %>% # plot this for figure 1
+  ggplot(., aes(num_haplotypes, num_loci)) +
+  geom_histogram(stat = "identity") +
+  theme_bw() +
+  xlab("Number of Haplotypes") +
+  ylab("Number of Loci") + 
+  scale_x_continuous(breaks = c(3,6,9,12))
+##plot with formatting
+fig1 <- m + theme(
+  axis.text.x=element_text(size=14),
+  axis.title.x=element_text(size=14, face="bold"),
+  axis.text.y=element_text(size=14),
+  axis.title.y=element_text(size=14, face="bold")
+)
+fig1
+## save that plot for Fig 1.
+ggsave(paste("./",panel_name,"-fig1.pdf",sep = ""), width = 9, height = 7, units = "in")
+#ggsave("./results/CKMRim/Fig1.pdf")
+
+
+######Now, let's just make a quick plot to confirm that we have gotten the highest minor allele frequency SNPs for each locus.
+
+all_mafs <- snp_freqs %>%
+  group_by(Locus, SNP) %>%
+  summarise(maf = min(Freq)) %>%
+  filter(maf <= 0.5)  # this gets rid of monomorphic ones
+
+best_mafs <- SNP_MAF_max %>%
+  group_by(Locus) %>%
+  summarise(maf = min(Freq))
+
+##Select microhaps n=ALL IN PANEL
+#First we are going to find the microhaps with the highest heterozygosity, and the SNPs with the high MAF
+
+mhap_hz <- mhaps %>%
+  group_by(Locus) %>% 
+  summarise(hz = 1 - sum(Freq^2), nHaps = n()) %>%
+  arrange(desc(hz)) 
+
+top_mhaps <- mhap_hz %>%
+  slice(1:nrow(mhap_hz))
+
+#===Figure 2
+
+#Here we create Fig. 2 - the plot with mhap heterozygosity and best snp minor allele frequency per locus.
+# snps = best_mafs
+# mhaps = mhap_hz
+# add a column that designates marker type
+best_snp_mafs <- best_mafs %>%
+  mutate(., Marker_type = "SNPs") 
+
+names(best_snp_mafs) <- c("Locus", "hz", "Marker_type")
+
+best_mhap_hz <- mhap_hz %>%
+  mutate(., Marker_type = "mhaps")
+
+# need to join these tibbles together and then sort by highest hz
+combo_hz <- best_mhap_hz %>%
+  bind_rows(., best_snp_mafs) %>% 
+  group_by(Locus) %>%
+  arrange(desc(hz))
+#head(combo_hz$Locus)
+
+#combo_hz$Locus <- factor(combo_hz$Locus, levels = combo_hz$Locus)
+#original code above gave error of duplicate levels, replaced with suggestion from the overflowing stack of knowledge below :D
+combo_hz$Locus <- factor(combo_hz$Locus, levels = rev(unique(combo_hz$Locus)), ordered=TRUE)
+
+
+levels(n_distinct(combo_hz$Locus))
+combo_plot <- combo_hz %>%
+  ggplot(., aes(x = Locus, y = hz, color = Marker_type)) +
+  geom_point() +
+  scale_color_manual(values = c("red", "dark blue"),
+                     labels = paste(c("microhaps", "SNPs"))) +
+  theme_bw() +
+  ylab("Heterozygosity") + 
+  guides(color = guide_legend(title="Marker Type")) +
+  theme(
+    axis.text.x = element_blank()
+  )
+
+# more formatting
+combo_plot <- combo_plot + theme(
+  axis.text.x=element_blank(),
+  axis.title.x=element_text(size=14, face="bold"),
+  axis.text.y=element_text(size=14),
+  axis.title.y=element_text(size=14, face="bold"),
+  legend.text=element_text(size=14),
+  legend.title=element_text(size=14, face="bold"))
+
+fig2 <- combo_plot +
+   theme(legend.position = c(0.15, 0.85))
+
+fig2
+ggsave(paste("./",panel_name,"-fig2.pdf",sep = ""), width = 9, height = 7, units = "in")
+# save that to a pdf
+#ggsave("output/Fig2.pdf")
+
+
+# head(best_mhap_hz,n = 20)
+# head(best_snp_mafs,n = 20)
+# head(combo_hz)
+
+
+#===Density Plots
+#If we want to plot the actual distributions, we can extract them and plot them. For example,
+#to plot the PO/U Lambdas we can do:
+
+extract_logls(Qs, numer = c(PO = 1), denom = c(U = 1)) %>%
+  ggplot(aes(x = logl_ratio, fill = true_relat)) +
+  geom_density(alpha = 0.3) + 
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"),
+        axis.text=element_text(size=18, face = "bold"),
+        axis.title=element_text(size=24,face="bold"))
+ggsave(paste("./",panel_name,"-density_curves.pdf",sep = ""), width = 9, height = 7, units = "in")
+```
