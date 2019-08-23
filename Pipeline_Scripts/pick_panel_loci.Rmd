@@ -16,41 +16,306 @@ We will use these names to directly index markers in rubias and CKMRsim. The tab
 #make a not in function for finding distinct loci
 '%!in%' <- function(x,y)!('%in%'(x,y))
 library(dplyr)
+library(ggplot2)
 ```
 
-#PANEL: FST_test
+#PANEL: Composite
 ```{r}
 #Name each test something new and select how many loci per selection category. 
 #Consider the order you select categories as there will be some overlap in loci and we are selecting without replacement.
-panel_name = "dev_primers_data"
+panel_name = "Composite_600"
 N_panel_loci = 600
-N_FST_LOCI = 350
+N_FST_LOCI = 300
 N_mHap_HE_LOCI = N_panel_loci - N_FST_LOCI
 
 #Read selection table
-selection_dat = read_excel("./TEST_data/TEST_SNP_selection_table_v3.1.xlsx",sheet = "SNP_selection_table_v3")
+selection_dat = read.csv("./SNP_summary_table.tsv", sep = "\t")
 # Not all loci initially selected will work for primer design, use this logic once you've identified which loci can't work to fill up the quota
 # selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_primed),]
 # selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_not_primed),]
 
 #Filter any SNPs with FIS that is outside the range of -0.2 - 0.2
-selection_dat_FIS = selection_dat[which(selection_dat$`Fis-diffCalc` > -0.2 & selection_dat$`Fis-diffCalc` < 0.2),]
+selection_dat_FIS = selection_dat[which(selection_dat$FIS_global_basicStats_SNP > -0.2 & selection_dat$FIS_global_basicStats_SNP < 0.2),]
 #Filter out any markers with position <17 to allow for primer design 
 #This information will still be present in the sequence data so you can design a wobble position
-selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$POS > 16),]
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$POS.x > 16),]
+
+# Filter loci with more than 10 alleles per locus out
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% selection_dat_FIS$CHROM),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+whitelist_U11_allele_loci = selected_loci_allele_counts[which(selected_loci_allele_counts$n_alleles_by_mhap < 11),]
+
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$CHROM %in% whitelist_U11_allele_loci$LOCUS_ID),]
 
 #GRAB GSI SNPS
 ##Grab the highest FST loci based on single SNP FST
-selection_dat_FST = arrange(selection_dat_FIS,desc(`Fst-diffCalc`))
-LOCI_FST_only = unique(selection_dat_FST$LOCUS_ID)[1:N_FST_LOCI]
+selection_dat_FST = arrange(selection_dat_FIS,desc(FST_diffCalc))
+LOCI_FST_only = unique(selection_dat_FST$CHROM)[1:N_FST_LOCI]
 
 #GRAB PARENTAGE SNPS
 #remove loci in the FST panel from this data we're getting He markers from
 #good parentage snps will have a high HAP_He
-selection_dat_parentage = arrange(selection_dat_FIS,desc(`HAP_He-adegenet-summary`))
-selection_dat_parentage = selection_dat_parentage[which(selection_dat_parentage$LOCUS_ID %!in% LOCI_FST_only),]
-LOCI_parentage = unique(selection_dat_parentage$LOCUS_ID)[1:N_mHap_HE_LOCI]
+selection_dat_parentage = arrange(selection_dat_FIS,desc(mhap_He))
+selection_dat_parentage = selection_dat_parentage[which(selection_dat_parentage$CHROM %!in% LOCI_FST_only),]
+LOCI_parentage = unique(selection_dat_parentage$CHROM)[1:N_mHap_HE_LOCI]
 #GREAT, now we can merge them to get the panel and give it a test
 #SELECT n FST based loci in the first range argument
 loci_for_panel = c(LOCI_FST_only,LOCI_parentage)
+
+
+#I want to produce barplots of the frequency of loci selected at each allele count
+#this information is in the selection_data variable
+#first subset the selection dat
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% loci_for_panel),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+selected_loci_allele_counts = arrange(selected_loci_allele_counts, desc(n_alleles_by_mhap))
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(n_alleles_by_mhap) %>% 
+  summarise(n())
+names(selected_loci_allele_counts) = c("n_alleles_by_mhap","freq")
+
+
+ggplot(selected_loci_allele_counts, aes(x = selected_loci_allele_counts$n_alleles_by_mhap, y = selected_loci_allele_counts$freq)) + geom_bar(stat = "identity")
+
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"FST_diffCalc"])
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"mhap_He"])
 ```
+#PANEL: FST600
+```{r}
+#Name each test something new and select how many loci per selection category. 
+#Consider the order you select categories as there will be some overlap in loci and we are selecting without replacement.
+panel_name = "FST_600"
+N_panel_loci = 600
+N_FST_LOCI = 600
+N_mHap_HE_LOCI = N_panel_loci - N_FST_LOCI
+
+#Read selection table
+selection_dat = read.csv("./SNP_summary_table.tsv", sep = "\t")
+# Not all loci initially selected will work for primer design, use this logic once you've identified which loci can't work to fill up the quota
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_primed),]
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_not_primed),]
+
+#Filter any SNPs with FIS that is outside the range of -0.2 - 0.2
+selection_dat_FIS = selection_dat[which(selection_dat$FIS_global_basicStats_SNP > -0.2 & selection_dat$FIS_global_basicStats_SNP < 0.2),]
+#Filter out any markers with position <17 to allow for primer design 
+#This information will still be present in the sequence data so you can design a wobble position
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$POS.x > 16),]
+
+# Filter loci with more than 10 alleles per locus out
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% selection_dat_FIS$CHROM),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+whitelist_U11_allele_loci = selected_loci_allele_counts[which(selected_loci_allele_counts$n_alleles_by_mhap < 11),]
+
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$CHROM %in% whitelist_U11_allele_loci$LOCUS_ID),]
+
+#GRAB GSI SNPS
+##Grab the highest FST loci based on single SNP FST
+selection_dat_FST = arrange(selection_dat_FIS,desc(FST_diffCalc))
+LOCI_FST_only = unique(selection_dat_FST$CHROM)[1:N_FST_LOCI]
+
+#GRAB PARENTAGE SNPS
+#remove loci in the FST panel from this data we're getting He markers from
+#good parentage snps will have a high HAP_He
+selection_dat_parentage = arrange(selection_dat_FIS,desc(mhap_He))
+selection_dat_parentage = selection_dat_parentage[which(selection_dat_parentage$CHROM %!in% LOCI_FST_only),]
+LOCI_parentage = unique(selection_dat_parentage$CHROM)[1:N_mHap_HE_LOCI]
+#GREAT, now we can merge them to get the panel and give it a test
+#SELECT n FST based loci in the first range argument
+loci_for_panel = c(LOCI_FST_only,LOCI_parentage)
+
+
+#I want to produce barplots of the frequency of loci selected at each allele count
+#this information is in the selection_data variable
+#first subset the selection dat
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% loci_for_panel),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+selected_loci_allele_counts = arrange(selected_loci_allele_counts, desc(n_alleles_by_mhap))
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(n_alleles_by_mhap) %>% 
+  summarise(n())
+names(selected_loci_allele_counts) = c("n_alleles_by_mhap","freq")
+
+
+ggplot(selected_loci_allele_counts, aes(x = selected_loci_allele_counts$n_alleles_by_mhap, y = selected_loci_allele_counts$freq)) + geom_bar(stat = "identity")
+
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"FST_diffCalc"])
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"mhap_He"])
+```
+#PANEL: mhap_600
+```{r}
+#Name each test something new and select how many loci per selection category. 
+#Consider the order you select categories as there will be some overlap in loci and we are selecting without replacement.
+panel_name = "mhapHE_600"
+N_panel_loci = 600
+N_FST_LOCI = 0
+N_mHap_HE_LOCI = N_panel_loci - N_FST_LOCI
+
+#Read selection table
+selection_dat = read.csv("./SNP_summary_table.tsv", sep = "\t")
+# Not all loci initially selected will work for primer design, use this logic once you've identified which loci can't work to fill up the quota
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_primed),]
+# selection_dat = selection_dat[which(selection_dat$LOCUS_ID %!in% geneious_data$ID_not_primed),]
+
+#Filter any SNPs with FIS that is outside the range of -0.2 - 0.2
+selection_dat_FIS = selection_dat[which(selection_dat$FIS_global_basicStats_SNP > -0.2 & selection_dat$FIS_global_basicStats_SNP < 0.2),]
+#Filter out any markers with position <17 to allow for primer design 
+#This information will still be present in the sequence data so you can design a wobble position
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$POS.x > 16),]
+
+# Filter loci with more than 10 alleles per locus out
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% selection_dat_FIS$CHROM),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+whitelist_U11_allele_loci = selected_loci_allele_counts[which(selected_loci_allele_counts$n_alleles_by_mhap < 11),]
+
+selection_dat_FIS = selection_dat_FIS[which(selection_dat_FIS$CHROM %in% whitelist_U11_allele_loci$LOCUS_ID),]
+
+#GRAB GSI SNPS
+##Grab the highest FST loci based on single SNP FST
+selection_dat_FST = arrange(selection_dat_FIS,desc(FST_diffCalc))
+LOCI_FST_only = unique(selection_dat_FST$CHROM)[1:N_FST_LOCI]
+
+#GRAB PARENTAGE SNPS
+#remove loci in the FST panel from this data we're getting He markers from
+#good parentage snps will have a high HAP_He
+selection_dat_parentage = arrange(selection_dat_FIS,desc(mhap_He))
+selection_dat_parentage = selection_dat_parentage[which(selection_dat_parentage$CHROM %!in% LOCI_FST_only),]
+LOCI_parentage = unique(selection_dat_parentage$CHROM)[1:N_mHap_HE_LOCI]
+#GREAT, now we can merge them to get the panel and give it a test
+#SELECT n FST based loci in the first range argument
+loci_for_panel = c(LOCI_FST_only,LOCI_parentage)
+
+
+#I want to produce barplots of the frequency of loci selected at each allele count
+#this information is in the selection_data variable
+#first subset the selection dat
+selected_loci_allele_counts = selection_dat[which(selection_dat$CHROM %in% loci_for_panel),]
+
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(CHROM) %>% 
+  summarise(max(n_alleles))
+names(selected_loci_allele_counts) = c("LOCUS_ID","n_alleles_by_mhap")
+selected_loci_allele_counts = arrange(selected_loci_allele_counts, desc(n_alleles_by_mhap))
+selected_loci_allele_counts = selected_loci_allele_counts %>% 
+  group_by(n_alleles_by_mhap) %>% 
+  summarise(n())
+names(selected_loci_allele_counts) = c("n_alleles_by_mhap","freq")
+
+
+ggplot(selected_loci_allele_counts, aes(x = selected_loci_allele_counts$n_alleles_by_mhap, y = selected_loci_allele_counts$freq)) + geom_bar(stat = "identity")
+
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"FST_diffCalc"])
+mean(selection_dat[which(selection_dat$CHROM %in% loci_for_panel),"mhap_He"])
+```
+# FIGURE alleles per locus
+
+This figure requires you select loci and merge them to a master table 3 times adding metadata as needed
+```{r}
+# Adding metadata
+allele_counts_compound_600 = selected_loci_allele_counts
+allele_counts_compound_600$panel_ID = "Composite_600"
+allele_counts_compound_600$lineType = "Composite_600"
+
+
+allele_counts_FST_600 = selected_loci_allele_counts
+allele_counts_FST_600$panel_ID = "FST_600"
+allele_counts_FST_600$lineType = "FST_600"
+
+
+allele_counts_HE_600 = selected_loci_allele_counts
+allele_counts_HE_600$panel_ID = "mhap_HE_600"
+allele_counts_HE_600$lineType = "mhap_HE_600"
+
+
+
+
+# 
+
+
+
+allele_counts_2plot = rbind.data.frame(allele_counts_HE_600,allele_counts_FST_600,allele_counts_compound_600)
+
+
+```
+
+```{r}
+save(allele_counts_2plot, file =  "./allele_counts_2plot.rda")
+load("./allele_counts_2plot.rda")
+```
+
+#run plot code
+```{r}
+allele_counts_2plot$panel_ID = factor(allele_counts_2plot$panel_ID, levels = c("FST_600", "Composite_600", "mhap_HE_600"))
+
+ggplot(allele_counts_2plot,
+       aes(x = n_alleles_by_mhap, 
+           y = freq)) +
+  #fill argument is used to specify the legend names and should match the hardcoded list I pass to the group field in the ggplot(aes())
+  geom_bar(stat = "identity", 
+           position = position_dodge(), 
+           aes(fill = allele_counts_2plot$panel_ID))+
+  # Specify the colors here, order will match order specified in the group and fil arguments
+  scale_fill_manual(values = c("#FF0000","#000000","#9900FF"), name = "Panel ID")+
+  
+  #adds lines to overlay bars
+  # geom_line(linetype = c("longdash"),
+  #           size = 0.3,
+  #           show.legend = F, 
+  #           inherit.aes = T, 
+  #           aes(group = panel_ID,
+  #               color = panel_ID,
+  #               alpha = 0.5))+
+  # scale_color_manual(values = c("#FF0000","#9900FF","#0066FF"))+
+  
+  # geom_point(shape = 16, alpha = 0.7, size = 2, inherit.aes = T)+
+  # scale_color_manual(values = c("#0066FF","#9900FF","#FF0000")) +
+  # 
+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        legend.position = "right")+
+  scale_x_continuous(name = "Alleles Per Locus",
+                     breaks = c(0,1,2,3,4,5,6,7,8,9,10,10.5), 
+                     labels = c(0,1,2,3,4,5,6,7,8,9,10,""), 
+                     limits = c(0,10.5),
+                     expand = c(0,0))+
+  scale_y_continuous(name = "Count Of Loci",
+                     breaks = c(0,100,200,300,400), 
+                     labels = c(0,100,200,300,400),
+                     limits = c(0,410),
+                     expand = c(0,0))+
+  # expand_limits(c(0,0))+
+  geom_hline(yintercept = 0)+
+  geom_vline(xintercept = 0)
+
+  
+
+ggsave("./GTseq_figure_alleles_per_locus.jpg", width = 10, height = 8, units = "in", dpi = 350)
+
+
+```
+#Read in plot data (8/8/2019)
+```{r}
+save(allele_counts_2plot, file = "./allele_counts_2plot_novoseq2.rda")
+open("./allele_counts_2plot_novoseq2.rda")
+```
+

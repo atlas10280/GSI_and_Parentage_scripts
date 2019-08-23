@@ -9,13 +9,15 @@ This analysis is only to asses GSI accuracy as of 4/23/2019
 This analysis is based on the scripts used in development and implimentation of GSI+Parentage pipeline in the SNP selection phase of project 1710
     which were derived from Baetscher et al.
 
-This version is what I'm using to re-run GSI with barcode repair pipeline data
+This version is what I'm using to produce figures for the GTseq publication
+Data is corrected
 
 #dependencies
 ```{r}
 '%!in%' <- function(x,y)!('%in%'(x,y))
 library(readxl)
-library("tidyverse", lib.loc="~/R/win-library/3.5")
+library("reshape2", lib.loc="~/R/win-library/3.5")
+# library("tidyverse", lib.loc="~/R/win-library/3.5")
 library("dplyr", lib.loc="~/R/win-library/3.5")
 library("tictoc", lib.loc="~/R/win-library/3.5")
 library(ggplot2)
@@ -31,9 +33,10 @@ library(raster)
 library(reticulate)
 #beepr makes a beep when long sections are done! how fun :)
 library(beepr)
+
 ```
 
-#-----Data Prep-----
+#-----VCF Processing--------
 #Parse
   Parse alleles from raw haps.vcf output produced in stacks_2
 ```{python}
@@ -42,14 +45,14 @@ library(beepr)
 import os
 import re
 os.getcwd()
-os.chdir("I:/WAE_RAD_Data/BARCODE_REPAIR_data/reFilter/IAGLR_bandaid_fix/SNPs/haps/")
+os.chdir("I:/WAE_RAD_Data/novoseq2/SNPs/GTseq")
 # open vcf file read all lines into an array, close file
-raw_vcf_file = open("populations.haps.vcf", "r")
+raw_vcf_file = open("haps_v2_novoseq2_snps.recode.vcf", "r")
 raw_vcf_array = raw_vcf_file.readlines()
 raw_vcf_file.close()
 
 # open file you are going to write new results to
-out_file = open("IGALR_haps4rubias.vcf", "w")
+out_file = open("haps4rubias_novoseq2.vcf", "w")
 r = 1
 # for each line in vcf file
 a = str(0)
@@ -164,7 +167,7 @@ out_file.close()  # script parse vcf file get alleles per individual
   Build BASE WAE data set with all samples
 ```{r}
 #Read in the parsed vcf and transpose, we're going to 
-vcf_input = read.delim("I:/WAE_RAD_Data/BARCODE_REPAIR_data/reFilter/IAGLR_bandaid_fix/SNPs/haps/IGALR_haps4rubias.vcf",sep="\t",header=TRUE, na.strings = c("-","."))
+vcf_input = read.delim("../../haps4rubias_novoseq2.vcf",sep="\t",header=TRUE, na.strings = c("-","."))
 transposed_data1 = as.data.frame(as.matrix(t(vcf_input)))
 #
 #remove raw vcf array and allocate naming vectors to build the base of the final rubias dataset
@@ -194,9 +197,9 @@ for (i in 1:ncol(WAE_base)) {
 rm(Hsub)
 #
 #write the transposed file out and read it back in due to poor R df manipulation skills
-write.csv(transposed_data1, "./transposed_vcf_hap_alleles_4_rubias.csv")
+write.csv(transposed_data1, "./transposed_hap_alleles_4_rubias.csv")
 rm(transposed_data1)
-transposed_data2 = read.csv("./transposed_vcf_hap_alleles_4_rubias.csv", sep = ",")
+transposed_data2 = read.csv("./transposed_hap_alleles_4_rubias.csv", sep = ",")
 #
 #bring the transposed data into the base rubias dataset
 head(transposed_data2)
@@ -209,10 +212,13 @@ metaData_collection= gsub("\\d+", "", WAE_base$indiv)
 WAE_base$collection = as.character(metaData_collection)
 rm(metaData_collection)
 WAE_base$indiv = as.character(WAE_base$indiv)
-write.csv(WAE_base,"rubias_hap_allele_data.csv")
+write.csv(WAE_base,"./rubias_hap_allele_data.csv")
 head(WAE_base)
 beep()
 ```
+
+#----POST VCF Processing---
+
 #Define Reporting Units
   training and holdout requires just that. We're going to split samples 50/50 assigning every other one to reference/mixture groups
   this section will also define reporting units for 1710_WAE data specifically
@@ -231,9 +237,7 @@ for (i in 1:nrow(WAE_base)) {
      WAE_base[i,3]== "Big_Arbor_Vitae.."|
      WAE_base[i,3]== "Kawaguesaga.."|
      WAE_base[i,3]== "Medicine_Lake.."|
-     WAE_base[i,3]== "Sanford_Lake.."|
-     WAE_base[i,3]== "Willow_Flowage.."|
-     WAE_base[i,3]== "Escanaba.."){
+     WAE_base[i,3]== "Willow_Flowage.."){
     
     WAE_base[i,2] = "Rep_U-Wisconsin"
   }
@@ -242,7 +246,11 @@ for (i in 1:nrow(WAE_base)) {
           WAE_base[i,3]== "Eau_Claire_River.."|
           WAE_base[i,3]== "Lake_Millicent.."|
           WAE_base[i,3]== "Manitowish_Lake.."|
-          WAE_base[i,3]== "Turtle_Flambeau_Flowage.."){
+          WAE_base[i,3]== "Turtle_Flambeau_Flowage.."|
+          WAE_base[i,3]== "Sanford_Lake.."|
+          WAE_base[i,3]== "Escanaba_Lake.."|
+          WAE_base[i,3]== "Escanaba.."
+          ){
     
     WAE_base[i,2] = "Rep_U-Chippewa"
   }
@@ -288,38 +296,57 @@ for (i in 1:nrow(WAE_base)) {
 WAE_base$repunit = as.factor(WAE_base$repunit)
 head(WAE_base)
 beep()
-WAE_base[which(WAE_base$collection == "Rep_U-Other"),]
+WAE_base[which(WAE_base$repunit == "Rep_U-Other"),]
+
+for (i in unique(WAE_base$repunit)) {
+  print(i)
+  print(length(which(WAE_base$repunit == i)))
+}
+WAE_base[which(WAE_base$repunit == "Rep_U-Lake_Koronis"),]
+
+WAE_base[which(WAE_base$collection == "Escanaba_Lake.."),"collection"] = "Escanaba.."
 ```
-#Define reference and mixture
 #SELECT SNPS HERE
+
+  MAKE SURE QUALITY TABLE CORRESPONDS DIRECTLY TO DATA, ONE SNP DIFFERENCE WILL PRODUCE ERRORS IN INDEXING!!!!
+  
+```{r}
+test_seq = seq(5,27936, by = 2)
+rubias_index = c(1,2,3,4,test_seq[which(unique(selection_dat$CHROM) %in% loci_for_panel)],test_seq[which(unique(selection_dat$CHROM) %in% loci_for_panel)]+1)
+rubias_index = sort(rubias_index)
+
+```
+
+#Define reference and mixture
+
   NO FAKE POPS IN REFERENCE
 ```{r}
-natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),rubias_index]
+natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..","Escanaba_Lake..")),rubias_index]
 # natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),]
 
-#NOTE: for odd number of samples, use line 279 in place of line 278
+# NOTE: for odd number of samples, use line 279 in place of line 278
 # natural_WAE$sample_type = c(rep(c("reference","mixture"),nrow(natural_WAE)/2))
-natural_WAE$sample_type = c(rep(c("reference","mixture"),nrow(natural_WAE)/2),"reference")
-
-head(natural_WAE)
+# natural_WAE$sample_type = c(rep(c("reference","mixture"),nrow(natural_WAE)/2),"reference")
+# 
+# head(natural_WAE)
 
 #if you have samples you don't want in the training but do want in the holdout, put them here
 # fake_WAE = WAE_base[which(WAE_base$collection %in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..")),]
 # fake_WAE$sample_type = "mixture"
 
-repU_defined_WAE = rbind.data.frame(
-  natural_WAE)  #, fake_WAE)
+# repU_defined_WAE = rbind.data.frame(
+#   natural_WAE)  #, fake_WAE)
 #subsetting the known collection data so we can easily subset correct vs incorrect assignments post mixture analysis
-known_collection_meta_dat = repU_defined_WAE$collection
-known_repU_meta_dat = repU_defined_WAE$repunit
-repU_defined_WAE = cbind.data.frame(known_collection_meta_dat,known_repU_meta_dat,repU_defined_WAE)
-
-repU_defined_WAE$repunit = as.character(repU_defined_WAE$repunit)
-
-repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"repunit"] = NA
-repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"collection"] = "Mixed_collection"
-
-repU_defined_WAE[] = lapply(repU_defined_WAE, as.character)
+# known_collection_meta_dat = repU_defined_WAE$collection
+# known_repU_meta_dat = repU_defined_WAE$repunit
+# repU_defined_WAE = cbind.data.frame(known_collection_meta_dat,known_repU_meta_dat,repU_defined_WAE)
+# 
+# repU_defined_WAE$repunit = as.character(repU_defined_WAE$repunit)
+# 
+# repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"repunit"] = NA
+# repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),"collection"] = "Mixed_collection"
+# 
+# repU_defined_WAE[] = lapply(repU_defined_WAE, as.character)
 # save(repU_defined_WAE,file = "./rubias_hap_training_and_holdout_data.rda")
 # save(known_collection_meta_dat, file =  "./rubias_hap_results_collection_metadata.rda")
 # save(known_repU_meta_dat, file =  "./rubias_hap_results_reporting_unit_metadata.rda")
@@ -327,145 +354,162 @@ beep()
 ```
 
 #------Simulations------
-#infer mixture 
-you can load the formatted RDA(s) and go from here
+# 100% Simulations 
+this section is dependent upon the object called LOO_in, which was built for the LOO sims. 
+it is just a subset of rubias formatted data, based on the indeces of the panel you are currently testing
+
 ```{r}
-# load("./rubias_training_and_holdout_data.rda")
-# load("./rubias_results_collection_metadata.rda")
-# load("./rubias_results_reporting_unit_metadata.rda")
-set.seed(651652)
-#Trial1: Infer Mixture using all SNPs
-#half samples allocated to mix half to ref
-tic('test: infer_mixture(method=MCMC)')
-test_mixture = infer_mixture(
-  reference = repU_defined_WAE[which(repU_defined_WAE$sample_type == "reference"),],
-  mixture = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),],
-  gen_start_col = 7, method = "MCMC", reps = 10000, burn_in = 1000)
-toc()
+# LOO_in = WAE_base[,rubias_index]
+LOO_in = natural_WAE
+# LOO_in = WAE_base
+#call all samples reference for 10% SIM
+LOO_in$sample_type = "reference"
+#make data all character type 
+LOO_in[] = lapply(LOO_in, as.character)
+head(LOO_in)
 
-# tic('test: infer_mixture(method=PB)')
-# test_mixture = infer_mixture(
-#   reference = repU_defined_WAE[which(repU_defined_WAE$sample_type == "reference"),],
-#   mixture = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),],
-#   gen_start_col = 7, method = "PB", reps = 10000, burn_in = 1000)
-# toc()
-#lets you know when to stop reading reddit memes or looking at cats
-beep()
-Sys.sleep(2)
-beep()
-Sys.sleep(2)
-beep()
-Sys.sleep(2)
-beep()
-```
-#------Process Output------
-  Calculates the max log(likelihood) for an individual and calls that the assignment
-  Make sure to specify the output name as something relevent to the sampled data
-  
-  THIS SECTION WRITES CSV 3X DON'T OVERWRITE!!!
-#report by population
-```{r}
-temp = test_mixture$indiv_posteriors
-
-# assigned_max_log_like = temp %>% 
-#   group_by(indiv) %>% 
-#   mutate(infered_collection = collection[which.max(log_likelihood)],
-#          infered_repU = repunit[which.max(log_likelihood)])
-#filter to just the max_likelihood assignment per individual
-
-
-#get the known collection meta data back in
-#some hard conding based on n_pops (ndistinct give n + 1 for "Mixed_collection") 
-#and n_mixed_collection_individuals (length(which("Mixed_collection")))
-
-tmp_meta = repU_defined_WAE[which(repU_defined_WAE$sample_type == "mixture"),1:2]
-
-known_collection = NULL
-for (i in 1:length(which(repU_defined_WAE$collection == "Mixed_collection"))) {
-  known_collection = c(known_collection,rep(tmp_meta[i,"known_collection_meta_dat"], times = n_distinct(repU_defined_WAE$collection)-1))
-}
-known_repu = NULL
-for (i in 1:length(which(repU_defined_WAE$collection == "Mixed_collection"))) {
-  known_repu = c(known_repu,rep(tmp_meta[i,"known_repU_meta_dat"], times = n_distinct(repU_defined_WAE$collection)-1))
-}
-temp = cbind.data.frame(known_collection, known_repu,temp)
-
-unique(temp$known_collection)
+#Builds specific folder for each panel's results
+# dir.create(paste("./results/Panel_tests/",panel_name,sep = ""))
+#saves the panel subset as an .Rda to load and look at later
+# save(index_temp, file = paste("./data/panel_analyses/panel-",panel_name,".Rda", sep = ""))
 ```
 
+ALWAYS CHECK STARTING COLUMN!!!!
+## Simulate by REPU
 ```{r}
-#filter to just the max_likelihood assignment per individual
-assigned_max_log_like = temp %>% 
-  group_by(indiv) %>% 
-  filter(log_likelihood == max(log_likelihood))
+#by repU
+# make a list of data frames with the proportions
+six_hundy_scenarios <- lapply(unique(LOO_in$repunit), function(x) tibble(repunit = x, ppn = 1.0))
+# give it some names too:
+names(six_hundy_scenarios) <- paste("All", unique(LOO_in$repunit), sep = "-")
 
+repu_hundy_results <- assess_reference_loo(reference = LOO_in,
+                     gen_start_col = 5,
+                     reps = 1000,
+                     mixsize = 200,
+                     seed = 5,
+                     alpha_repunit = six_hundy_scenarios,
+                     alpha_collection = 10,
+                     return_indiv_posteriors = TRUE,
+                     #seed = 5
+                     )
+#                      
+beep()
+save(repu_hundy_results, file = paste("./REPU_hundy_sim_results",panel_name,".rda",sep = ""))
+#For some reasone the simulations were filling the simulation repunit and collection metadata with NA's after the first simulation
+#this is some janky ass hardcoding to fix the problem for me. If you can generalize it great! Let me know what you did plz ;)
+#or if you want to think less... just replace 20 with the number of collections you have in your data :D
+simU_id = repu_hundy_results$mixing_proportions$repunit[1:20]
+sim_collect_ids = repu_hundy_results$mixing_proportions$collection[1:20]
+#this puts the metadata back into the results
+repu_hundy_results$mixing_proportions$repunit = simU_id
+repu_hundy_results$mixing_proportions$collection = sim_collect_ids
 
-#subset the most likely assignment
-# assignment_result = assigned_max_log_like %>% 
-#   group_by(indiv) %>% 
-#   filter(log_likelihood == max(log_likelihood))
+#calculate the net simulated mle_pi for each reporting unit, by iteration, for each 100% collection
+hundy_sim_summary = repu_hundy_results$mixing_proportions %>% 
+  group_by(repunit_scenario, iter, repunit) %>% 
+  summarise(net_pi_mle_by_repu = round(sum(mle_pi),2)) %>% 
+  ungroup()
+#calculate an average simulated mle_pi for each reporting unit, over all iterations, for each 100% collection
+hundy_sim_summary_mean_pi_mle = hundy_sim_summary %>% 
+  group_by(repunit_scenario, repunit) %>% 
+  summarise(avg_pi_mle_by_repu = mean(net_pi_mle_by_repu))
+#calculate 95%CI around the mean
+hundy_sim_summary_95CI = hundy_sim_summary %>% 
+  group_by(repunit_scenario, repunit) %>% 
+  summarise(CI95_pi_mle_by_repu = (1.96*(sd(net_pi_mle_by_repu)/sqrt(length(net_pi_mle_by_repu)))))
+```
 
-# #count correct and incorrect assignments by lake
-assignment_result_by_lake = assigned_max_log_like %>%
-  group_by(known_collection,collection) %>%
-  summarise(n())
-
-assignment_result_by_lake = assignment_result_by_lake %>% ungroup(assignment_result_by_lake)
-
-#prepare plot x, y values
-#X is the assigned pop, Y is the origins population
-whitelist = read.csv("./1710_GSI_plot_XY_metadat_by_collection_IAGLR_pops.csv")
-whitelist$collection = as.character(whitelist$collection)
-assignment_result_by_lake$known_collection = as.character(assignment_result_by_lake$known_collection)
-assignment_result_by_lake$collection = as.character(assignment_result_by_lake$collection)
-
-assignment_result_by_lake$x_val = NA
-assignment_result_by_lake$y_val = NA
-assignment_result_by_lake = as.data.frame(assignment_result_by_lake)
-
-for (i in 1:nrow(assignment_result_by_lake)) {
-  assignment_result_by_lake[i,"x_val"] = whitelist[which(whitelist$collection == assignment_result_by_lake[i,"collection"]),"xy_val"]
-  
-  assignment_result_by_lake[i,"y_val"] = whitelist[which(whitelist$collection == assignment_result_by_lake[i,"known_collection"]),"xy_val"]
+### Calculate accuracy by REPU
+  Summarize the results from the 100% simulation, calculate % unassigned, write out
+```{r}
+summarize_indv_assignment = as.data.frame(matrix(NA,
+                                                 nrow = length(unique(hundy_sim_summary_mean_pi_mle$repunit)),
+                                                 ncol = length(unique(hundy_sim_summary_mean_pi_mle$repunit_scenario))))
+j=1
+i=1
+i=NULL
+for (i in 1:length(unique(hundy_sim_summary_mean_pi_mle$repunit_scenario))) {
+  for (j in 1:length(unique(hundy_sim_summary_mean_pi_mle$repunit))) {
+    x = which(hundy_sim_summary_mean_pi_mle$repunit_scenario == unique(hundy_sim_summary_mean_pi_mle$repunit_scenario)[i])
+    summarize_indv_assignment[j,i] = hundy_sim_summary_mean_pi_mle[x[j],3]
+  }
 }
 
-#calculate proportion assigned to each collection
+colnames(summarize_indv_assignment) = unique(hundy_sim_summary_mean_pi_mle$repunit_scenario)
+rownames(summarize_indv_assignment) = unique(hundy_sim_summary_mean_pi_mle$repunit)
+#see dev/GSI_pipe for section designed to calculate the proportion unassigned 
+
+# write.csv(summarize_indv_assignment,paste("./results/Panel_tests/",panel_name,"/","100%_SIM-",panel_name,".csv",sep = ""))
+```
+
+### Format results for plot
+```{r}
+#capture results in test data frame
+test_summarize_indv_assignment = summarize_indv_assignment
+#make the rownames (the lake assigned to) a variable (FACTOR)
+test_summarize_indv_assignment$assigned_to = factor(rownames(test_summarize_indv_assignment))
+#Melt
+summarize_indv_assignment_melted = reshape2::melt(test_summarize_indv_assignment)
+#rename columns
+names(summarize_indv_assignment_melted) = c("assigned_to","simulated_from","proportion")
+#remove useless strings
+summarize_indv_assignment_melted$assigned_to = gsub("Rep_U-","",summarize_indv_assignment_melted$assigned_to)
+summarize_indv_assignment_melted$simulated_from = gsub("All-Rep_U-","",summarize_indv_assignment_melted$simulated_from)
+#turn 0's into NA values
+summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$proportion < 0.005),3] = NA
+#reorder levels to mach table order
+# summarize_indv_assignment_melted$assigned_to = factor(summarize_indv_assignment_melted$assigned_to, levels = "")
+
+auto_axis_list = NULL
+for (i in 1:n_distinct(summarize_indv_assignment_melted$assigned_to)) {
+  auto_axis_list = paste(auto_axis_list, "'",unique(summarize_indv_assignment_melted$assigned_to)[i],"'",",", sep = "")
+}
+auto_axis_list
+
+#Block that sets x and y values according to  your hardcode
+#First collect the names of your simulation scenarios
+edit_axis = as.data.frame(unique(summarize_indv_assignment_melted$simulated_from))
+#Second, add a numeric value that defines BOTH x and Y coordinate (same as we want self assignment on the diagonal)
+edit_axis$repU_plot_order = c(4,10,1,7,8,11,13,9,12,6,5,3,2)
+names(edit_axis) = c("Pop_ID","Plot_order")
+#loop adds the x y data to the data frame with proportions to plot
+summarize_indv_assignment_melted$simed_from_Ycoord = NA
+summarize_indv_assignment_melted$assigned_to_Xcoord = NA
+for (i in 1:nrow(edit_axis)) {
+  summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$simulated_from == edit_axis[i,1]),"simed_from_Ycoord"] = edit_axis[i,2]
+  summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$assigned_to == edit_axis[i,1]),"assigned_to_Xcoord"] = edit_axis[i,2]
+}
+#organize so we have ascending assignments within ascending simulation scenarios
+summarize_indv_assignment_melted = summarize_indv_assignment_melted %>% arrange(assigned_to_Xcoord)
+summarize_indv_assignment_melted = summarize_indv_assignment_melted %>% arrange(simed_from_Ycoord)
+rownames(summarize_indv_assignment_melted) = 1:nrow(summarize_indv_assignment_melted)
+
+save(summarize_indv_assignment_melted, file = paste("./simulation_result_", panel_name,"byREPU.rda", sep = ""))
+
 #
-assignment_result_by_lake$prop_assigned = NA
+### Plot by REPU
+#
+#
+#DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
 
-for (i in 1:nrow(assignment_result_by_lake)) {
-  assignment_result_by_lake[i,"prop_assigned"] = assignment_result_by_lake[i,"n()"]/sum(assignment_result_by_lake[which(assignment_result_by_lake$known_collection == assignment_result_by_lake[i,"known_collection"]),"n()"])
-}
-```
-#by pop plot
-```{r}
-#plot results
-pdf("./assignment_by_pop_IAGLR_hybrid(SNP)_haps.pdf", width = 11, height = 11)
-ggplot(assignment_result_by_lake, aes(x = x_val, y = y_val, size = prop_assigned))+
-  geom_point(alpha = 0.2, size = 12*assignment_result_by_lake$prop_assigned)+ 
-  geom_text(aes(label=round(prop_assigned*100,0)), size = 6)+ 
-  scale_y_continuous(
-    name = "Sampled Population",
-    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19),
-    labels=c("Delavan","Wolf River", "Lake Wisconsin",
-             "Medicine Lake","Willow Flowage",
-             "Big Arbor Vitae", "Manitowish Lake", "Turtle Flambeau Flowage",
-             "Chippewa Flowage", "Eau Claire River", "St. Louis River",
-             "Pike River", "Sarah Lake", "Lake Koronis",
-             "Mille Lacs", "Pine River", "Cutfoot Sioux",
-             "Ottertail Lake", "Red Lake")
-        )+
+ggplot(summarize_indv_assignment_melted, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black", 
+             alpha = 0.5, inherit.aes = T, 
+             size = (18*summarize_indv_assignment_melted$proportion))+
+  geom_text(aes(label=round(proportion*100,0)), 
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
   scale_x_continuous(
-    name = "Assigned Population",
-    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19),
-    labels=c("Delavan","Wolf River", "Lake Wisconsin",
-             "Medicine Lake","Willow Flowage",
-             "Big Arbor Vitae", "Manitowish Lake", "Turtle Flambeau Flowage",
-             "Chippewa Flowage", "Eau Claire River", "St. Louis River",
-             "Pike River", "Sarah Lake", "Lake Koronis",
-             "Mille Lacs", "Pine River", "Cutfoot Sioux",
-             "Ottertail Lake", "Red Lake")
-  )+
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(    
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+                       )+
+  labs(x = "Assigned Reporting Unit", y = "Simulated Reporting Unit")+
   theme(
     plot.title = element_text(hjust = 0.5, size = 28),
     axis.title = element_text(size = 22),
@@ -478,78 +522,235 @@ ggplot(assignment_result_by_lake, aes(x = x_val, y = y_val, size = prop_assigned
     panel.border = element_rect(colour = "#666666", fill=NA, size=1),
     legend.position = "none"
   )+
-  geom_hline(yintercept = c(2.5,6.5,10.5), linetype = "dashed",
-   color = c("#CCCCCC","#CCCCCC","#000000"))+
-  geom_vline(xintercept = c(2.5,6.5,10.5), linetype = "dashed",
-   color = c("#CCCCCC","#CCCCCC","#000000"))+
-  ggtitle("Proportion of individuals assigned
-by lake")
-dev.off()
+  geom_hline(yintercept = 4.5)
+  
+ggsave(paste("./100_Sims_",panel_name,".jpg"), width = 10, height = 10, dpi = 350)
+# write.csv(summarize_indv_assignment_melted,"./EDIT.csv")
 ```
 
-#report by RepU
-```{r}
 
-#####
-# #repeat, by reporting unit
-assignment_result_by_repU = assigned_max_log_like %>%
-  group_by(known_repu,repunit) %>%
-  summarise(n())
+## Simulate by POP
 
-assignment_result_by_repU = as.data.frame(assignment_result_by_repU)
-#prepare plot x, y values
-##X is the assigned pop, Y is the origins population
-whitelist = read.csv("./1710_GSI_plot_XY_metadat_by_repU.csv")
-whitelist$repunit = as.character(whitelist$repunit)
-assignment_result_by_repU$known_repu = as.character(assignment_result_by_repU$known_repu)
-assignment_result_by_repU$repunit = as.character(assignment_result_by_repU$repunit)
-#vectorize results
-assignment_result_by_repU$x_val = NA
-assignment_result_by_repU$y_val = NA
-#loop matches to whitelist and extracts the corresponding coordinate
-for (i in 1:nrow(assignment_result_by_repU)) {
-  assignment_result_by_repU[i,"x_val"] = whitelist[which(whitelist$repunit == assignment_result_by_repU[i,"repunit"]),"xy_val"]
+#SELECT SNPS HERE for just POP sim
+
+  MAKE SURE QUALITY TABLE CORRESPONDS DIRECTLY TO DATA, ONE SNP DIFFERENCE WILL PRODUCE ERRORS IN INDEXING!!!!
   
-  assignment_result_by_repU[i,"y_val"] = whitelist[which(whitelist$repunit == assignment_result_by_repU[i,"known_repu"]),"xy_val"]
+```{r}
+test_seq = seq(5,27936, by = 2)
+rubias_index = c(1,2,3,4,test_seq[which(unique(selection_dat$CHROM) %in% loci_for_panel)],test_seq[which(unique(selection_dat$CHROM) %in% loci_for_panel)]+1)
+rubias_index = sort(rubias_index)
+
+natural_WAE = WAE_base[which(WAE_base$collection %!in% c("Lake_Millicent..","Sanford_Lake..","Escanaba..","Escanaba_Lake..")),rubias_index]
+
+# LOO_in = WAE_base[,rubias_index]
+LOO_in = natural_WAE
+# LOO_in = WAE_base
+#call all samples reference for 10% SIM
+LOO_in$sample_type = "reference"
+#make data all character type 
+LOO_in[] = lapply(LOO_in, as.character)
+head(LOO_in)
+
+
+```
+
+```{r}
+hundy_colls = unique(LOO_in$collection)
+
+hundy_coll_list <- lapply(hundy_colls, function(x) tibble(collection = x, ppn = 1.0)) %>%
+  setNames(paste("100%", hundy_colls, sep = "_"))
+
+
+#run sim, MAKE SURE TO SPECIFY THE CORRECT ALPHA
+repu_hundy_results <- assess_reference_loo(reference = LOO_in, 
+                     gen_start_col = 5, 
+                     reps = 1000,
+                     mixsize = 200,
+                     # reps = 10, 
+                     # mixsize = 200,
+                     seed = 5,
+                     alpha_collection = hundy_coll_list,
+                     return_indiv_posteriors = TRUE,
+                     #seed = 5
+                     )
+beep()
+
+save(repu_hundy_results, file = paste("./POP_hundy_sim_results",panel_name,".rda",sep = ""))
+
+
+### Calculate accuracy by POP
+
+test = repu_hundy_results$mixing_proportions
+
+test_collect = rep(test[1:length(which(!is.na(test$repunit))),"collection"], times = n_distinct(test$repunit_scenario))
+test$collection = test_collect$collection
+
+test[999:1010,]
+#calculate the net simulated mle_pi for each reporting unit, by iteration, for each 100% collection
+hundy_sim_summary = test %>% 
+  group_by(collection_scenario, iter, collection) %>% 
+  summarise(net_pi_mle_by_pop = round(sum(mle_pi),2)) %>% 
+  ungroup()
+#calculate an average simulated mle_pi for each reporting unit, over all iterations, for each 100% collection
+hundy_sim_summary_mean_pi_mle = hundy_sim_summary %>% 
+  group_by(collection_scenario, collection) %>% 
+  summarise(avg_pi_mle_by_pop = mean(net_pi_mle_by_pop))
+#calculate 95%CI around the mean
+hundy_sim_summary_95CI = hundy_sim_summary %>% 
+  group_by(collection_scenario, collection) %>% 
+  summarise(CI95_pi_mle_by_pop = (1.96*(sd(net_pi_mle_by_pop)/sqrt(length(net_pi_mle_by_pop)))))
+
+
+summarize_indv_assignment = as.data.frame(matrix(NA,
+                                                 nrow = length(unique(hundy_sim_summary_mean_pi_mle$collection)),
+                                                 ncol = length(unique(hundy_sim_summary_mean_pi_mle$collection_scenario))))
+j=1
+i=1
+i=NULL
+for (i in 1:length(unique(hundy_sim_summary_mean_pi_mle$collection_scenario))) {
+  for (j in 1:length(unique(hundy_sim_summary_mean_pi_mle$collection))) {
+    x = which(hundy_sim_summary_mean_pi_mle$collection_scenario == unique(hundy_sim_summary_mean_pi_mle$collection_scenario)[i])
+    summarize_indv_assignment[j,i] = hundy_sim_summary_mean_pi_mle[x[j],3]
+  }
 }
-#calculate proportion assigned to each collection
-assignment_result_by_repU$prop_assigned = NA
 
-for (i in 1:nrow(assignment_result_by_repU)) {
-  assignment_result_by_repU[i,"prop_assigned"] = assignment_result_by_repU[i,"n()"]/sum(assignment_result_by_repU[which(assignment_result_by_repU$known_repu == assignment_result_by_repU[i,"known_repu"]),"n()"])
+colnames(summarize_indv_assignment) = unique(hundy_sim_summary_mean_pi_mle$collection_scenario)
+rownames(summarize_indv_assignment) = unique(hundy_sim_summary_mean_pi_mle$collection)
+#see dev/GSI_pipe for section designed to calculate the proportion unassigned 
+```
+
+```{r}
+# write.csv(summarize_indv_assignment,paste("./results/Panel_tests/",panel_name,"/","100%_SIM-",panel_name,".csv",sep = ""))
+
+
+#capture results in test data frame
+test_summarize_indv_assignment = summarize_indv_assignment
+#make the rownames (the lake assigned to) a variable (FACTOR)
+test_summarize_indv_assignment$assigned_to = factor(rownames(test_summarize_indv_assignment))
+#Melt
+summarize_indv_assignment_melted = reshape2::melt(test_summarize_indv_assignment)
+#rename columns
+names(summarize_indv_assignment_melted) = c("assigned_to","simulated_from","proportion")
+#remove useless strings
+summarize_indv_assignment_melted$assigned_to = gsub("Rep_U-","",summarize_indv_assignment_melted$assigned_to)
+summarize_indv_assignment_melted$simulated_from = gsub("All-Rep_U-","",summarize_indv_assignment_melted$simulated_from)
+#turn 0's into NA values
+summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$proportion < 0.005),3] = NA
+#reorder levels to mach table order
+# summarize_indv_assignment_melted$assigned_to = factor(summarize_indv_assignment_melted$assigned_to, levels = "")
+
+auto_axis_list = NULL
+for (i in 1:n_distinct(summarize_indv_assignment_melted$assigned_to)) {
+  auto_axis_list = paste(auto_axis_list, "'",unique(summarize_indv_assignment_melted$assigned_to)[i],"'",",", sep = "")
 }
+auto_axis_list
+```
+### Format results for plot
+ hardcode assigned order by assigning the xy position you want to each name as it appears in "auto_axis_list"
+```{r}
+#Block that sets x and y values according to  your hardcode
+#First collect the names of your simulation scenarios
+edit_axis = as.data.frame(unique(summarize_indv_assignment_melted$simulated_from))
+edit_axis$assigned_to = unique(summarize_indv_assignment_melted$assigned_to)
+#Second, add a numeric value that defines BOTH x and Y coordinate (same as we want self assignment on the diagonal)
+edit_axis$assigned_to_order = c(7, 10, 17, 1, 11, 6, 14, 3, 8, 4, 15, 18, 20, 16, 19, 13, 12, 9, 5, 2)
+names(edit_axis) = c("simulated_from","assigned_to","assigned_to_order")
+
+edit_axis$simulated_from_order = rownames(edit_axis)
 
 
+# panel_name = "FST_600"
+# panel_name = "mhapHE_600"
+# panel_name = "Composite_600"
+# load(file = paste("./simulation_result_",panel_name,"_byPOP.rda", sep = ""))
+#loop adds the x y data to the data frame with proportions to plot
+summarize_indv_assignment_melted$simed_from_Ycoord = NA
+summarize_indv_assignment_melted$assigned_to_Xcoord = NA
+
+for (i in 1:nrow(edit_axis)) {
+  summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$simulated_from == edit_axis[i,1]),"simed_from_Ycoord"] = edit_axis[i,3]
+  
+  summarize_indv_assignment_melted[which(summarize_indv_assignment_melted$assigned_to == edit_axis[i,2]),"assigned_to_Xcoord"] = edit_axis[i,3]
+}
+#organize so we have ascending assignments within ascending simulation scenarios
+summarize_indv_assignment_melted = summarize_indv_assignment_melted %>% arrange(assigned_to_Xcoord)
+summarize_indv_assignment_melted = summarize_indv_assignment_melted %>% arrange(simed_from_Ycoord)
+rownames(summarize_indv_assignment_melted) = 1:nrow(summarize_indv_assignment_melted)
+
+save(summarize_indv_assignment_melted, file = paste("./simulation_result_",panel_name,"_byPOP.rda", sep = ""))
+
+#
+### Plot by POP
+#
+#
+# DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+
+ggplot(summarize_indv_assignment_melted, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black", 
+             alpha = 0.5, inherit.aes = T, 
+             size = (18*summarize_indv_assignment_melted$proportion))+
+  geom_text(aes(label=round(proportion*100,0)), 
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(    
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+                       )+
+  labs(x = "Assigned Population", y = "Simulated Population")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )+
+  geom_hline(yintercept = c(2.5,7.5,13.5))+
+  geom_vline(xintercept = c(2.5,7.5,13.5))
+  
+ggsave(paste("./100_Sims_", panel_name, ".jpg", sep = ""), width = 20, height = 20, dpi = 350)
+# write.csv(summarize_indv_assignment_melted,"./EDIT.csv")
+# 
+beep()
+Sys.sleep(2)
 beep()
 Sys.sleep(2)
 beep()
 ```
-#by repu plot
+
+
+# Build 3 panel plot
+## By REPU
 ```{r}
-#plot results
-# pdf("./assignment_by_repu_IAGLR_hybrid(SNP)_haps.pdf", width = 11, height = 11)
-jpeg("./IAGLR_HE_GSI.jpg", width = 8, height = 8, units = "in", quality = 100, res = 300)
-ggplot(assignment_result_by_repU, aes(x = x_val, y = y_val, size = prop_assigned))+
-  geom_point(alpha = 0.2, size = 12*assignment_result_by_repU$prop_assigned)+ 
-  geom_text(aes(label=round(prop_assigned*100,0)), size = 6)+ 
-  # scale_y_continuous(
-  #   name = "Sampled Population",
-  #   breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13),
-  #   labels=c("Delavan","Wolf River", "Upper Wisconsin",
-  #            "Upper Chippewa","St. Louis River","Pike River",
-  #            "Sarah Lake", "Lake Koronis", "Mille Lacs",
-  #            "Pine River", "Cutfoot Sioux","Ottertail Lake",
-  #            "Red Lake")
-  #       )+
+load("./simulation_result_FST_600byREPU.rda")
+FST_plot = summarize_indv_assignment_melted
+
+p_FST = ggplot(FST_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*FST_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
   scale_x_continuous(
-    name = "Assigned Population",
-    breaks=c(1,2,3,4,5,6,7,8,9,10,11,12,13),
-    labels=c("Delavan","Wolf River", "Upper Wisconsin",
-             "Upper Chippewa","St. Louis River","Pike River",
-             "Sarah Lake", "Lake Koronis", "Mille Lacs",
-             "Pine River", "Cutfoot Sioux","Ottertail Lake",
-             "Red Lake")
-  )+
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+                       )+
+  labs(x = " ", y = "Simulated Reporting Unit", title = "FST 600")+
   theme(
     plot.title = element_text(hjust = 0.5, size = 28),
     axis.title = element_text(size = 22),
@@ -561,20 +762,257 @@ ggplot(assignment_result_by_repU, aes(x = x_val, y = y_val, size = prop_assigned
     axis.line = element_line(colour = "#666666"),
     panel.border = element_rect(colour = "#666666", fill=NA, size=1),
     legend.position = "none"
-  )+
-  geom_hline(yintercept = c(2.5,3.5,4.5), linetype = "dashed",
-   color = c("#CCCCCC","#CCCCCC","#000000"))+
-  geom_vline(xintercept = c(2.5,3.5,4.5), linetype = "dashed",
-   color = c("#CCCCCC","#CCCCCC","#000000"))#+
-  # ggtitle("Proportion of individuals assigned
-# by reporting unit")
-dev.off()
+  )
+  # geom_hline(yintercept = 4.5)
+
+load("./simulation_result_composite_600byREPU.rda")
+composite_plot = summarize_indv_assignment_melted
+
+p_composite = ggplot(composite_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*composite_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+                       )+
+  labs(x = "Assigned Reporting Unit", y = NULL, title = "Composite 600")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )
+  # geom_hline(yintercept = 4.5)
+
+load("./simulation_result_mhapHE_600byREPU.rda")
+HE_plot = summarize_indv_assignment_melted
+
+p_HE = ggplot(HE_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*HE_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13),
+    labels = c('Delavan', 'Wolf River', 'Wisconsin', 'Chippewa', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+                       )+
+  labs(x = " ", y = NULL, title = "mhap_He 600")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )
+  # geom_hline(yintercept = 4.5)
+
+ggsave(grid.arrange(p_FST,p_composite,p_HE, nrow = 1),width = 34, height = 11.5, filename = "./TEST_triplot_byREPU.jpg")
 ```
 
+### Accuracy measures by repU
+By panel on average
+```{r}
+mean(FST_plot[which(FST_plot$assigned_to_Xcoord == FST_plot$simed_from_Ycoord & !is.na(FST_plot$proportion)),"proportion"])
+#
+mean(composite_plot[which(composite_plot$assigned_to_Xcoord == composite_plot$simed_from_Ycoord & !is.na(composite_plot$proportion)),"proportion"])
+#
+mean(HE_plot[which(HE_plot$assigned_to_Xcoord == HE_plot$simed_from_Ycoord & !is.na(HE_plot$proportion)),"proportion"])
 
 
+```
+
+By repU
+```{r}
+FST_plot
+self_assignments_FST = FST_plot[which(FST_plot$simed_from_Ycoord == FST_plot$assigned_to_Xcoord),]
+self_assignments_FST$panel = "FST_600"
+self_assignments_FST2 = self_assignments_FST[,c("panel","simulated_from","proportion")]
+
+composite_plot
+self_assignments_composite = composite_plot[which(composite_plot$simed_from_Ycoord == composite_plot$assigned_to_Xcoord),]
+self_assignments_composite$panel = "composite_600"
+self_assignments_composite2 = self_assignments_composite[,c("panel","simulated_from","proportion")]
 
 
+HE_plot
+self_assignments_HE = HE_plot[which(HE_plot$simed_from_Ycoord == HE_plot$assigned_to_Xcoord),]
+self_assignments_HE$panel = "HE_600"
+self_assignments_HE2 = self_assignments_HE[,c("panel","simulated_from","proportion")]
+
+self_assignements_summary = rbind.data.frame(self_assignments_FST2,self_assignments_composite2,self_assignments_HE2)
+
+write.csv(self_assignements_summary, file = "./summary_hundySim_by_POP.csv", row.names = F, quote = F)
+
+```
+
+## By POP
+```{r}
+load("./simulation_result_FST_600_byPOP.rda")
+FST_plot = summarize_indv_assignment_melted
+
+p_FST = ggplot(FST_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*FST_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  labs(x = " ", y = "Simulated Reporting Unit", title = "FST 600")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )
+  # geom_hline(yintercept = 4.5)
+
+load("./simulation_result_composite_600_byPOP.rda")
+composite_plot = summarize_indv_assignment_melted
+
+p_composite = ggplot(composite_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*composite_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  labs(x = "Assigned Reporting Unit", y = NULL, title = "Composite 600")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )
+  # geom_hline(yintercept = 4.5)
+
+load("./simulation_result_mhapHE_600_byPOP.rda")
+HE_plot = summarize_indv_assignment_melted
+
+p_HE = ggplot(HE_plot, aes(x = assigned_to_Xcoord, y = simed_from_Ycoord, size = proportion))+
+  geom_point(shape = 21, fill = "gray", color = "black",
+             alpha = 0.5, inherit.aes = T,
+             size = (18*HE_plot$proportion))+
+  geom_text(aes(label=round(proportion*100,0)),
+            size = 8)+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_x_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  #DID YOU CODE THE XY VALUES CORRECTLY ABOVE? SEE auto_axis_list
+  scale_y_continuous(
+    breaks = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20),
+    labels = c('Delavan', 'Wolf River', 'Lake Wisconsin', 'Medicine Lake', 'Willow Flowage', 'Kawaguesaga', 'Big Arbor Vitae', 'Manitowish Lake', 'Turtle Flambeau', 'Chippewa Flowage', 'Eau Claire River', 'St Louis', 'Pike River', 'Sarah Lake', 'Lake Koronis', 'Mille Lacs', 'Pine River', 'Cutfoot Sioux', 'Ottertail Lake', 'Red Lake')
+    )+
+  labs(x = " ", y = NULL, title = "mhap_He 600")+
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 28),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(colour = "#666666"),
+    panel.border = element_rect(colour = "#666666", fill=NA, size=1),
+    legend.position = "none"
+  )
+  # geom_hline(yintercept = 4.5)
+
+ggsave(grid.arrange(p_FST,p_composite,p_HE, nrow = 1),width = 34, height = 11.5, filename = "./TEST_triplot_byPOP.jpg")
+```
+
+### Accuracy measures by POP
+
+average by panel
+```{r}
+mean(FST_plot[which(FST_plot$assigned_to_Xcoord == FST_plot$simed_from_Ycoord & !is.na(FST_plot$proportion)),"proportion"])
+#
+mean(composite_plot[which(composite_plot$assigned_to_Xcoord == composite_plot$simed_from_Ycoord & !is.na(composite_plot$proportion)),"proportion"])
+#
+mean(HE_plot[which(HE_plot$assigned_to_Xcoord == HE_plot$simed_from_Ycoord & !is.na(HE_plot$proportion)),"proportion"])
 
 
+```
+
+By pop
+```{r}
+FST_plot
+self_assignments_FST = FST_plot[which(FST_plot$simed_from_Ycoord == FST_plot$assigned_to_Xcoord),]
+self_assignments_FST$panel = "FST_600"
+self_assignments_FST2 = self_assignments_FST[,c("panel","simulated_from","proportion")]
+
+composite_plot
+self_assignments_composite = composite_plot[which(composite_plot$simed_from_Ycoord == composite_plot$assigned_to_Xcoord),]
+self_assignments_composite$panel = "composite_600"
+self_assignments_composite2 = self_assignments_composite[,c("panel","simulated_from","proportion")]
+
+
+HE_plot
+self_assignments_HE = HE_plot[which(HE_plot$simed_from_Ycoord == HE_plot$assigned_to_Xcoord),]
+self_assignments_HE$panel = "HE_600"
+self_assignments_HE2 = self_assignments_HE[,c("panel","simulated_from","proportion")]
+
+self_assignements_summary = rbind.data.frame(self_assignments_FST2,self_assignments_composite2,self_assignments_HE2)
+
+write.csv(self_assignements_summary, file = "./summary_hundySim_by_POP.csv", row.names = F, quote = F)
+
+```
 

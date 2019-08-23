@@ -20,7 +20,9 @@ library(pegas)
 ```
 #Initial commit by Peter, documentation left as is
 ```{r}
-vcf <- read.vcfR("./TEST_data/TEST_populations.haps.vcf", verbose = FALSE )
+# vcf <- read.vcfR("./TEST_data/TEST_populations.haps.vcf", verbose = FALSE )
+vcf <- read.vcfR("../v6_novoseq2_snps_GTseq.vcf", verbose = FALSE )
+
 #add ID column ---------
 vcf <- addID(vcf, sep = "_")
 
@@ -79,7 +81,8 @@ summary_table2 <- left_join(SNP_quality_tab, locus_quality_tab, by = "ChromKey")
 
 summary_table2 <- left_join(summary_table2, locus_quality_no_PE_tab, by = "ChromKey")
 ```
-#Create final table
+
+#Create table
 ```{r}
 # create New ID column to join by
 summary_table1$ChromKey_pos <- paste(summary_table1$ChromKey, summary_table1$POS, sep = "_")
@@ -90,10 +93,55 @@ summary_table_final <- left_join(summary_table1, summary_table2, by = "ChromKey_
 
 # subset to desired columns (again, this might vary by preference. check the table before subsetting)
 summary_table_final <- summary_table_final[,-c(14,15,16)]
+```
+
+#Fst using diveRsity (diffcalc)
+```{r}
+
+#WAE_pops = read.genepop("../../Populations/v4H_populations.snps.gen", ncode = 3)
+#Fstats = diffCalc("../../Populations/v4H_populations.snps.gen","./Fst_global-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
+#WAE_haps = read.genepop("../../Populations/Haploid/populations.haplotypes.gen", ncode = 2)
+Fstats = diffCalc("../../v6_novoseq2_snps_GTseq_NATURAL.gen","./Fst_snps-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
+summary_table_final$FST_diffCalc = Fstats$std_stats$Fst[1:nrow(Fstats$std_stats)-1]
+```
+
+#Global Fis
+  see genepop file used, I simply grouped the data into one panmictic population and added a second group of fake data
+  extracted the Fis for the panmictic group and used it as my global Fis
+```{r}
+bstats = basicStats("../../v6_novoseq2_snps_GTseq_NATURAL.gen","./novoseq2_global_Fis.txt",
+           fis_ci = FALSE, ar_ci = FALSE)
+summary_table_final$FIS_basicStats = bstats$fis[,"Big_Arbor_Vitae.10.13651"]
+```
+
+#haplotype Ho and He
+```{r}
+snps = read.genepop("../../haps_v2_novoseq2_snps.recode.vcf" ncode = 2)
+synopsis_snps = summary(snps)
+head(synopsis_snps$Hobs)
+
+out = cbind(synopsis_snps$Hobs,synopsis_snps$Hexp,synopsis_snps$loc.n.all)
+colnames(out) = c("Ho","He","n_alleles")
+head(out)
+write.csv(out, file = "./Haplotype_heterozygosity.csv")
+getwd()
+```
+
 
 # write final table
-write.table(summary_table_final, "./TEST_data/test_hap_summary_table.tsv", quote = F, row.names = F, sep = "\t")
+```{r}
+write.table(summary_table_final, "./SNP_summary_table.tsv", quote = F, row.names = F, sep = "\t")
 ```
+
+```{r}
+# summary_table_final = read.csv("./SNP_summary_table.tsv", sep = "\t")
+```
+
+
+#------OTHER-----------
+
+
+
 
 #Calc Ho and He
 #Using summary (adegenet)
@@ -156,14 +204,7 @@ dev.off()
     #surf = list(x = x.pred, y = y.pred, z = z.pred,  
     #facets = NA, fit = fitpoints), main = "SNPS")
 ```
-#Global Fis
-  #see genepop file used, I simply grouped the data into one panmictic population and added a second group of fake data 
-  #extracted the Fis for the panmictic group and used it as my global Fis
-```{r}
-bstats = basicStats("../../Populations/v4H_global_populations.snps.gen","v4H_global_Fis.txt",
-           fis_ci = FALSE, ar_ci = FALSE)
 
-```
 ```{r}
 ref_table_tmp = read.csv("./SNP_summary_table_vFormatHand.csv",header = TRUE)
 ref_table_tmp$Fis_global = bstats$fis$Delavan_01
@@ -172,14 +213,7 @@ write.csv(ref_table_tmp,"./SNP_summary_table_vFormatHand2.csv")
 
 ```
 
-#check Fst using diveRsity (diffcalc)
-```{r}
 
-#WAE_pops = read.genepop("../../Populations/v4H_populations.snps.gen", ncode = 3)
-#Fstats = diffCalc("../../Populations/v4H_populations.snps.gen","./Fst_global-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
-#WAE_haps = read.genepop("../../Populations/Haploid/populations.haplotypes.gen", ncode = 2)
-Fstats = diffCalc("../../Populations/Haploid/populations.haplotypes.gen","./Fst_haps-diveRsity", fst = TRUE, pairwise = FALSE, bs_locus = FALSE)
-```
 #maf calculated in rubias_work_allele_parse.rmd
 ```{r}
 head(WAE_base)
@@ -191,15 +225,5 @@ head(WAE_base)
 write.table(WAE_base$indiv, "../STACKS_pipeline/haplotype_data/hap_pipe_good_indv.txt", row.names = FALSE, col.names = FALSE)
 
 ```
-#haplotype Ho and He
-```{r}
-snps = read.genepop("../../Populations/Haploid/populations.haplotypes.gen", ncode = 2)
-synopsis_snps = summary(snps)
-head(synopsis_snps$Hobs)
 
-out = cbind(synopsis_snps$Hobs,synopsis_snps$Hexp,synopsis_snps$loc.n.all)
-colnames(out) = c("Ho","He","n_alleles")
-head(out)
-write.csv(out, file = "./Haplotype_heterozygosity.csv")
-```
 
