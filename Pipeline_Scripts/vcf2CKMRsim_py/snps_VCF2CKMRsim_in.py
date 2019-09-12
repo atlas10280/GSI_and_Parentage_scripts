@@ -20,7 +20,7 @@ for i in raw_vcf_array:
 
         # hard code column names you wan
         out_file.write(
-            "locus" + "\t" + "indv" + "\t" + "gene.copy" + "\t" + "allele" + "\n")
+            "locus" + "\t" + "SNP" + "\t" + "indv" + "\t" + "gene.copy" + "\t" + "allele" + "\n")
         header_line = i.rstrip().split("\t")
         # grabbing individual names for use in the next loop
         names = header_line[9:(len(header_line)+1)]
@@ -50,6 +50,8 @@ for i in raw_vcf_array:
                 if j.startswith("."):
                     #first, print the locus name
                     out_file.write(split_ind_line[0] + "\t")
+                    #next, print the SNP name
+                    out_file.write(split_ind_line[0]+"_"+split_ind_line[1] + "\t")
                     #next, print the individual name
                     out_file.write(names[y] + "\t")
                     #next, print a gene.copy ID (hap1 or 2?)
@@ -58,8 +60,10 @@ for i in raw_vcf_array:
                         #in this case, we expect it to be "./." or a missing call
                     out_file.write("NA" + "\n")
                     #proceed to print the second allele's information on a new line
-                    # first, print the locus name
+                    #first, print the locus name
                     out_file.write(split_ind_line[0] + "\t")
+                    #next, print the SNP name
+                    out_file.write(split_ind_line[0]+"_"+split_ind_line[1] + "\t")
                     # next, print the individual name
                     out_file.write(names[y] + "\t")
                     # next, print a gene.copy ID (hap1 or 2?)
@@ -67,11 +71,14 @@ for i in raw_vcf_array:
                     #last, print the second allele call
                     out_file.write("NA" + "\n")
                     y = y + 1
+                    next
 
 
                 else:
                     #first, print the locus name
                     out_file.write(split_ind_line[0] + "\t")
+                    #next, print the SNP name
+                    out_file.write(split_ind_line[0]+"_"+split_ind_line[1] + "\t")
                     #next, print the individual name
                     out_file.write(names[y] + "\t")
                     #next, print a gene.copy ID (hap1 or 2?)
@@ -87,8 +94,10 @@ for i in raw_vcf_array:
                     index2 = int(allele_indices[1])
                     out_file.write(haplotypes[index1] + "\n")
                     #proceed to print the second allele's information on a new line
-                    # first, print the locus name
+                    #first, print the locus name
                     out_file.write(split_ind_line[0] + "\t")
+                    #next, print the SNP name
+                    out_file.write(split_ind_line[0]+"_"+split_ind_line[1] + "\t")
                     # next, print the individual name
                     out_file.write(names[y] + "\t")
                     # next, print a gene.copy ID (hap1 or 2?)
